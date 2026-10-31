@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JSON Chunks 合併工具</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --text: #1f2933; --muted: #6b7785;
+    --line: #d9dee5; --accent: #2f6fed; --accent-dark: #1f56c4;
+    --ok: #1b8a4b; --err: #c62828;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px 16px; background: var(--bg); color: var(--text);
+    font-family: -apple-system, "Segoe UI", "Noto Sans TC", sans-serif; line-height: 1.5;
+  }
+  .wrap { max-width: 1100px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 20px; font-size: 14px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
+  h2 { font-size: 15px; margin: 0 0 10px; }
+  textarea {
+    width: 100%; height: 300px; resize: vertical; padding: 10px;
+    border: 1px solid var(--line); border-radius: 8px;
+    font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12.5px; background: #fbfcfd; color: var(--text);
+  }
+  .row { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; margin-bottom: 12px; }
+  label { font-size: 14px; display: inline-flex; align-items: center; gap: 6px; }
+  input[type=number], select, input[type=text] {
+    padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; font-size: 14px; background: #fff; color: var(--text);
+  }
+  input[type=number] { width: 80px; }
+  input[type=text] { width: 140px; }
+  button {
+    padding: 8px 16px; border: 1px solid var(--accent); background: var(--accent); color: #fff;
+    border-radius: 8px; font-size: 14px; cursor: pointer;
+  }
+  button:hover { background: var(--accent-dark); }
+  button.secondary { background: #fff; color: var(--accent); }
+  button.secondary:hover { background: #eef3ff; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  .status { font-size: 14px; margin-top: 8px; min-height: 20px; }
+  .status.ok { color: var(--ok); }
+  .status.err { color: var(--err); }
+  .stats { font-size: 13px; color: var(--muted); }
+  .preview { max-height: 320px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; }
+  .item { padding: 8px 10px; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .item:last-child { border-bottom: none; }
+  .item b { color: var(--accent); }
+  .item .src { color: var(--muted); font-size: 12px; }
+  .item pre { margin: 4px 0 0; white-space: pre-wrap; word-break: break-word; font-family: inherit; }
+  input[type=file] { font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>JSON Chunks 合併工具</h1>
+  <p class="sub">每 N 個 chunk 的 content 合併成 1 個。輸出只保留 index 和 content。</p>
+
+  <div class="card">
+    <h2>設定</h2>
+    <div class="row">
+      <label>每幾個合併：
+        <input type="number" id="groupSize" value="3" min="1" step="1">
+      </label>
+      <label>連接方式：
+        <select id="sepType">
+          <option value="blank">空一行 (\n\n)</option>
+          <option value="newline">換行 (\n)</option>
+          <option value="none">直接相接</option>
+          <option value="custom">自訂</option>
+        </select>
+      </label>
+      <label id="customWrap" style="display:none">自訂字元：
+        <input type="text" id="customSep" placeholder="例如 ---">
+      </label>
+      <label>新 index 起始值：
+        <input type="number" id="startIndex" value="0" step="1">
+      </label>
+      <label><input type="checkbox" id="sortByIndex" checked> 先依原 index 排序</label>
+    </div>
+    <div class="row">
+      <input type="file" id="fileInput" accept=".json,application/json">
+      <button id="runBtn">合併</button>
+      <button id="clearBtn" class="secondary">清除</button>
+    </div>
+    <div id="status" class="status"></div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>輸入 JSON（貼上或選擇檔案）</h2>
+      <textarea id="input" spellcheck="false" placeholder='{"chunks":[{"index":0,"content":"..."}]}'></textarea>
+    </div>
+    <div class="card">
+      <h2>輸出 JSON</h2>
+      <textarea id="output" spellcheck="false" readonly></textarea>
+      <div class="row" style="margin-top:10px">
+        <button id="copyBtn" disabled>複製</button>
+        <button id="downloadBtn" class="secondary" disabled>下載 JSON</button>
+        <span id="stats" class="stats"></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>預覽</h2>
+    <div id="preview" class="preview"><div class="item">尚無資料。</div></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var inputEl = $("input"), outputEl = $("output"), statusEl = $("status");
+  var resultJson = "";
+
+  function setStatus(msg, type) {
+    statusEl.textContent = msg;
+    statusEl.className = "status" + (type ? " " + type : "");
+  }
+
+  function getSeparator() {
+    var t = $("sepType").value;
+    if (t === "blank") return "\n\n";
+    if (t === "newline") return "\n";
+    if (t === "none") return "";
+    return $("customSep").value;
+  }
+
+  $("sepType").addEventListener("change", function () {
+    $("customWrap").style.display = this.value === "custom" ? "inline-flex" : "none";
+  });
+
+  $("fileInput").addEventListener("change", function (e) {
+    var file = e.target.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function () {
+      inputEl.value = reader.result;
+      setStatus("已讀取檔案：" + file.name, "ok");
+    };
+    reader.onerror = function () { setStatus("讀取檔案失敗。", "err"); };
+    reader.readAsText(file, "UTF-8");
+  });
+
+  function run() {
+    var raw = inputEl.value.trim();
+    if (!raw) { setStatus("請先貼上或選擇 JSON。", "err"); return; }
+
+    var data;
+    try { data = JSON.parse(raw); }
+    catch (err) { setStatus("JSON 格式錯誤：" + err.message, "err"); return; }
+
+    var chunks = Array.isArray(data) ? data : data && data.chunks;
+    if (!Array.isArray(chunks)) { setStatus('找不到 "chunks" 陣列。', "err"); return; }
+    if (chunks.length === 0) { setStatus('"chunks" 是空的。', "err"); return; }
+
+    var size = parseInt($("groupSize").value, 10);
+    if (!size || size < 1) { setStatus("「每幾個合併」必須是 1 以上的整數。", "err"); return; }
+
+    var start = parseInt($("startIndex").value, 10);
+    if (isNaN(start)) start = 0;
+
+    var list = chunks.slice();
+    if ($("sortByIndex").checked) {
+      list.sort(function (a, b) {
+        var ai = (a && typeof a.index === "number") ? a.index : 0;
+        var bi = (b && typeof b.index === "number") ? b.index : 0;
+        return ai - bi;
+      });
+    }
+
+    var sep = getSeparator();
+    var merged = [];
+    var sources = [];
+    var skipped = 0;
+
+    for (var i = 0; i < list.length; i += size) {
+      var group = list.slice(i, i + size);
+      var parts = [];
+      var idxs = [];
+      group.forEach(function (c) {
+        if (c && typeof c.content === "string") {
+          parts.push(c.content);
+        } else {
+          skipped++;
+        }
+        idxs.push(c && c.index !== undefined ? c.index : "?");
+      });
+      merged.push({ index: start + merged.length, content: parts.join(sep) });
+      sources.push(idxs);
+    }
+
+    resultJson = JSON.stringify({ chunks: merged }, null, 2);
+    outputEl.value = resultJson;
+    $("copyBtn").disabled = false;
+    $("downloadBtn").disabled = false;
+    $("stats").textContent = "原本 " + list.length + " 個 → 合併後 " + merged.length + " 個";
+
+    renderPreview(merged, sources);
+
+    var msg = "完成。原本 " + list.length + " 個，合併後 " + merged.length + " 個。";
+    if (skipped > 0) msg += " 有 " + skipped + " 個 chunk 沒有字串 content，已略過。";
+    setStatus(msg, skipped > 0 ? "" : "ok");
+  }
+
+  function renderPreview(merged, sources) {
+    var box = $("preview");
+    box.innerHTML = "";
+    merged.forEach(function (m, i) {
+      var div = document.createElement("div");
+      div.className = "item";
+      var head = document.createElement("div");
+      var b = document.createElement("b");
+      b.textContent = "index " + m.index;
+      var src = document.createElement("span");
+      src.className = "src";
+      src.textContent = "  ← 原 index: " + sources[i].join(", ") + "  (" + m.content.length + " 字)";
+      head.appendChild(b);
+      head.appendChild(src);
+      var pre = document.createElement("pre");
+      var text = m.content;
+      pre.textContent = text.length > 300 ? text.slice(0, 300) + " ..." : text;
+      div.appendChild(head);
+      div.appendChild(pre);
+      box.appendChild(div);
+    });
+  }
+
+  $("runBtn").addEventListener("click", run);
+
+  $("clearBtn").addEventListener("click", function () {
+    inputEl.value = "";
+    outputEl.value = "";
+    resultJson = "";
+    $("fileInput").value = "";
+    $("copyBtn").disabled = true;
+    $("downloadBtn").disabled = true;
+    $("stats").textContent = "";
+    $("preview").innerHTML = '<div class="item">尚無資料。</div>';
+    setStatus("", "");
+  });
+
+  $("copyBtn").addEventListener("click", function () {
+    if (!resultJson) return;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(resultJson).then(
+        function () { setStatus("已複製。", "ok"); },
+        function () { fallbackCopy(); }
+      );
+    } else { fallbackCopy(); }
+  });
+
+  function fallbackCopy() {
+    outputEl.select();
+    try {
+      document.execCommand("copy");
+      setStatus("已複製。", "ok");
+    } catch (e) {
+      setStatus("複製失敗，請手動複製。", "err");
+    }
+  }
+
+  $("downloadBtn").addEventListener("click", function () {
+    if (!resultJson) return;
+    var blob = new Blob([resultJson], { type: "application/json" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = "merged_chunks.json";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  });
+})();
+</script>
+</body>
+</html>
