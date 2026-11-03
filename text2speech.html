@@ -1,0 +1,536 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>影子朗讀</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=Instrument+Sans:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap">
+<style>
+/* Layout: language-lab console. Settings rack, text box, sentence tape, sticky transport bar at the bottom. */
+:root {
+  --bg: #E9EEEE;
+  --surface: #F9FBFA;
+  --surface-2: #DDE5E5;
+  --ink: #102027;
+  --muted: #506068;
+  --line: #C6D2D3;
+  --accent: #0A6B67;
+  --on-accent: #F4FFFE;
+  --mark: #FFE27A;
+  --mark-ink: #2A2100;
+  --turn: #B8400A;
+  --font-ui: "Instrument Sans", "Noto Sans TC", system-ui, -apple-system, "PingFang TC", "Microsoft JhengHei", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0C1417;
+    --surface: #142026;
+    --surface-2: #1C2C33;
+    --ink: #E3EEEE;
+    --muted: #93A7AC;
+    --line: #2A3C43;
+    --accent: #4CCFC3;
+    --on-accent: #05201E;
+    --mark: #5C4A06;
+    --mark-ink: #FFF1BC;
+    --turn: #FFA26B;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0C1417;
+  --surface: #142026;
+  --surface-2: #1C2C33;
+  --ink: #E3EEEE;
+  --muted: #93A7AC;
+  --line: #2A3C43;
+  --accent: #4CCFC3;
+  --on-accent: #05201E;
+  --mark: #5C4A06;
+  --mark-ink: #FFF1BC;
+  --turn: #FFA26B;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: 16px;
+  line-height: 1.5;
+  padding-block: 20px 0;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  -webkit-text-size-adjust: 100%;
+}
+.wrap { max-width: 560px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+h1 { font-size: 1.75rem; line-height: 1.15; margin: 0; letter-spacing: 0.02em; text-wrap: balance; }
+.sub { margin: 4px 0 0; color: var(--muted); font-size: 0.9375rem; }
+.banner { background: var(--mark); color: var(--mark-ink); padding: 12px 14px; border-radius: 10px; font-size: 0.9375rem; }
+
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+.field { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.lbl { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; font-size: 0.8125rem; font-weight: 600; letter-spacing: 0.06em; color: var(--muted); }
+.lbl output { font-family: var(--font-mono); font-size: 0.875rem; color: var(--ink); letter-spacing: 0; }
+.hint { margin: 0; font-size: 0.8125rem; color: var(--muted); }
+
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { position: relative; }
+.chip input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.chip span { display: block; padding: 9px 14px; border: 1px solid var(--line); border-radius: 999px; background: var(--bg); font-size: 0.9375rem; font-weight: 500; }
+.chip input:checked + span { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.chip input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+select, textarea { width: 100%; font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 11px 12px; }
+select { min-height: 46px; }
+textarea { resize: vertical; min-height: 128px; line-height: 1.6; font-size: 1rem; }
+select:focus-visible, textarea:focus-visible, input[type="range"]:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+input[type="range"] { width: 100%; height: 32px; accent-color: var(--accent); margin: 0; }
+
+.shadow-box { display: flex; flex-direction: column; gap: 16px; padding-top: 16px; border-top: 1px dashed var(--line); }
+
+.row { display: flex; gap: 8px; flex-wrap: wrap; }
+.btn { font: inherit; font-size: 0.9375rem; font-weight: 600; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 999px; padding: 8px 16px; min-height: 40px; cursor: pointer; }
+.btn:active { background: var(--surface-2); }
+
+.tape-head { display: flex; justify-content: space-between; align-items: baseline; padding-inline: 2px; }
+.tape-head h2 { margin: 0; font-size: 0.8125rem; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; }
+.tape-head span { font-family: var(--font-mono); font-size: 0.8125rem; color: var(--muted); }
+ol.tape { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.sen { width: 100%; display: grid; grid-template-columns: 2.2rem minmax(0, 1fr); gap: 8px; align-items: baseline; text-align: left; font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px; cursor: pointer; scroll-margin-block: 96px 200px; }
+.sen .n { font-family: var(--font-mono); font-size: 0.8125rem; color: var(--muted); }
+.sen .t { overflow-wrap: anywhere; }
+.sen.done { color: var(--muted); }
+.sen.now { background: var(--mark); color: var(--mark-ink); border-color: var(--mark); font-weight: 600; }
+.sen.now .n { color: var(--mark-ink); }
+.empty { color: var(--muted); font-size: 0.9375rem; padding: 20px 4px; text-align: center; }
+
+.dock { position: sticky; bottom: 0; margin-top: 4px; background: var(--surface); border: 1px solid var(--line); border-bottom: 0; border-radius: 18px 18px 0 0; padding: 12px 16px calc(14px + env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; gap: 10px; box-shadow: 0 -6px 20px rgba(0, 0, 0, 0.08); }
+.status { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; min-height: 1.5rem; }
+.status b { font-size: 0.9375rem; }
+.status span { font-family: var(--font-mono); font-size: 0.8125rem; color: var(--muted); }
+.status.listen b { color: var(--accent); }
+.status.turn b { color: var(--turn); }
+.meter { height: 6px; border-radius: 3px; background: var(--surface-2); overflow: hidden; }
+.meter i { display: block; height: 100%; width: 0; background: var(--turn); }
+.transport { display: grid; grid-template-columns: 1fr 1.6fr 1fr 1fr; gap: 10px; }
+.tbtn { min-height: 56px; display: grid; place-items: center; font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 16px; cursor: pointer; }
+.tbtn svg { width: 24px; height: 24px; fill: currentColor; }
+.tbtn:active { background: var(--surface-2); }
+.tbtn.main { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.tbtn.main svg { width: 28px; height: 28px; }
+.tbtn:disabled { opacity: 0.4; }
+.foot { margin: 0; padding-bottom: 12px; font-size: 0.8125rem; color: var(--muted); }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+
+<main class="wrap">
+  <header>
+    <h1>影子朗讀</h1>
+    <p class="sub">聽一句，停一下，跟著說。</p>
+  </header>
+
+  <div id="unsupported" class="banner" hidden>這個瀏覽器不支援 Web Speech API 語音合成。請改用 Chrome、Edge 或 Safari。</div>
+
+  <section class="panel" aria-label="設定">
+    <div class="field">
+      <div class="lbl"><span>語言</span></div>
+      <div id="langs" class="chips" role="radiogroup" aria-label="語言"></div>
+    </div>
+
+    <div class="field">
+      <label class="lbl" for="voice"><span>聲音</span></label>
+      <select id="voice"></select>
+      <p id="voiceHint" class="hint" hidden></p>
+    </div>
+
+    <div class="field">
+      <label class="lbl" for="rate"><span>語速</span><output id="rateOut" for="rate">0.90×</output></label>
+      <input id="rate" type="range" min="0.5" max="1.5" step="0.05" value="0.9">
+    </div>
+
+    <div class="field">
+      <label class="lbl" for="pitch"><span>語調 PITCH</span><output id="pitchOut" for="pitch">1.0</output></label>
+      <input id="pitch" type="range" min="0.5" max="2" step="0.1" value="1">
+    </div>
+
+    <div class="field">
+      <div class="lbl"><span>模式</span></div>
+      <div class="chips" role="radiogroup" aria-label="模式">
+        <label class="chip"><input id="mode-shadow" type="radio" name="mode" value="shadow"><span>影子朗讀</span></label>
+        <label class="chip"><input id="mode-read" type="radio" name="mode" value="read"><span>連續朗讀</span></label>
+      </div>
+    </div>
+
+    <div id="shadowBox" class="shadow-box">
+      <div class="field">
+        <label class="lbl" for="gap"><span>跟讀停頓</span><output id="gapOut" for="gap">1.00× 句長</output></label>
+        <input id="gap" type="range" min="0" max="2" step="0.25" value="1">
+        <p class="hint">每句播完後，停頓「句長 × 倍數」讓你跟讀。設成 0 就不停頓，你可以邊聽邊跟。</p>
+      </div>
+      <div class="field">
+        <div class="lbl"><span>每句重複</span></div>
+        <div class="chips" role="radiogroup" aria-label="每句重複">
+          <label class="chip"><input id="rep-1" type="radio" name="repeat" value="1"><span>1 次</span></label>
+          <label class="chip"><input id="rep-2" type="radio" name="repeat" value="2"><span>2 次</span></label>
+          <label class="chip"><input id="rep-3" type="radio" name="repeat" value="3"><span>3 次</span></label>
+        </div>
+      </div>
+    </div>
+
+    <label class="chip" style="align-self:flex-start">
+      <input id="soft" type="checkbox">
+      <span>長句依逗號再拆小段</span>
+    </label>
+  </section>
+
+  <section class="panel" aria-label="輸入文字">
+    <div class="field">
+      <label class="lbl" for="txt"><span>輸入文字</span></label>
+      <textarea id="txt" rows="6" placeholder="貼上或輸入要朗讀的文字。系統會自動分句。" spellcheck="false"></textarea>
+      <div class="row">
+        <button id="sample" class="btn" type="button">載入範例</button>
+        <button id="clear" class="btn" type="button">清除</button>
+      </div>
+    </div>
+  </section>
+
+  <section aria-label="分句結果">
+    <div class="tape-head"><h2>分句結果　點一句即可從該句開始</h2><span id="count">0 句</span></div>
+    <ol id="tape" class="tape" style="margin-top:8px"></ol>
+  </section>
+
+  <p class="foot">語速預設 0.9。語音由你的裝置提供，聲音與語調效果依手機而異。</p>
+
+  <div class="dock" role="region" aria-label="播放控制">
+    <div id="status" class="status"><b id="stMain">待命</b><span id="stSub"></span></div>
+    <div class="meter" aria-hidden="true"><i id="bar"></i></div>
+    <div class="transport">
+      <button id="prev" class="tbtn" type="button" aria-label="上一句"><svg viewBox="0 0 24 24"><path d="M6 6h2v12H6zM9.5 12 18 6v12z"/></svg></button>
+      <button id="play" class="tbtn main" type="button" aria-label="播放"><svg id="playIcon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></button>
+      <button id="next" class="tbtn" type="button" aria-label="下一句"><svg viewBox="0 0 24 24"><path d="M16 6h2v12h-2zM14.5 12 6 18V6z"/></svg></button>
+      <button id="stop" class="tbtn" type="button" aria-label="停止"><svg viewBox="0 0 24 24"><path d="M7 7h10v10H7z"/></svg></button>
+    </div>
+  </div>
+</main>
+
+<script>
+(function () {
+  'use strict';
+  var KEY = 'shadowReader.v1';
+  var $ = function (id) { return document.getElementById(id); };
+  var synth = ('speechSynthesis' in window) ? window.speechSynthesis : null;
+
+  var LANGS = [
+    ['en-US', 'English (US)'], ['en-GB', 'English (UK)'],
+    ['zh-TW', '中文 (台灣)'], ['zh-CN', '中文 (普通話)'],
+    ['zh-HK', '粵語 (香港)'], ['ja-JP', '日本語']
+  ];
+  var SAMPLES = {
+    en: 'Learning a language is a marathon, not a sprint. Listen to one sentence. Then say it out loud right after the voice. Keep your tone steady, and copy the rhythm.',
+    zh: '學語言像跑馬拉松，不是短跑。先聽一句話。然後在聲音之後立刻大聲跟著說。保持穩定的語氣，並且模仿節奏。',
+    ja: '言語学習はマラソンです。まず一文を聞きます。そのあとすぐ声に出して真似します。リズムを意識しましょう。'
+  };
+
+  /* ---------- settings (remembered per viewer) ---------- */
+  var S = { lang: 'en-US', voices: {}, pitch: 1, rate: 0.9, mode: 'shadow', gap: 1, repeat: 1, soft: true, text: '', sample: true };
+  try {
+    var raw = localStorage.getItem(KEY);
+    if (raw) { var o = JSON.parse(raw); for (var k in o) { if (k in S) S[k] = o[k]; } }
+  } catch (e) {}
+  function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
+  function clamp(v, a, b, d) { v = Number(v); return isFinite(v) ? Math.min(b, Math.max(a, v)) : d; }
+  if (!LANGS.some(function (l) { return l[0] === S.lang; })) S.lang = 'en-US';
+  S.rate = clamp(S.rate, 0.5, 1.5, 0.9);
+  S.pitch = clamp(S.pitch, 0.5, 2, 1);
+  S.gap = clamp(S.gap, 0, 2, 1);
+  S.repeat = clamp(S.repeat, 1, 3, 1);
+  if (S.mode !== 'read') S.mode = 'shadow';
+  if (!S.voices || typeof S.voices !== 'object') S.voices = {};
+  function prim(l) { return String(l).replace('_', '-').split('-')[0].toLowerCase(); }
+  function sampleFor(l) { return SAMPLES[prim(l)] || SAMPLES.en; }
+  if (S.sample || !S.text) { if (S.sample) S.text = sampleFor(S.lang); }
+
+  /* ---------- sentence splitting ---------- */
+  function fallbackSplit(line) {
+    return line
+      .replace(/([。！？；!?;…]+["”’」』)）]*)/g, '$1\u0001')
+      .replace(/([.!?]+["”’)]*)\s+/g, '$1\u0001')
+      .split('\u0001');
+  }
+  function softSplit(p, max) {
+    if (p.length <= max) return [p];
+    var pieces = p.match(/[^,，、;；:：]+[,，、;；:：]*\s*/g) || [p];
+    var res = [], cur = '';
+    pieces.forEach(function (x) {
+      if (cur && (cur + x).length > max) { res.push(cur.trim()); cur = x; } else { cur += x; }
+    });
+    if (cur.trim()) res.push(cur.trim());
+    return res;
+  }
+  function splitText(text, lang) {
+    var out = [];
+    var cjk = /^(zh|ja|ko)/.test(lang);
+    var seg = null;
+    try { if (window.Intl && Intl.Segmenter) seg = new Intl.Segmenter(lang, { granularity: 'sentence' }); } catch (e) {}
+    text.replace(/\r/g, '').split(/\n+/).forEach(function (line) {
+      line = line.trim();
+      if (!line) return;
+      var parts = [];
+      if (seg) { var it = seg.segment(line)[Symbol.iterator](), r; while (!(r = it.next()).done) parts.push(r.value.segment); }
+      else { parts = fallbackSplit(line); }
+      parts.forEach(function (p) {
+        p = p.trim();
+        if (!p) return;
+        if (S.soft) { softSplit(p, cjk ? 50 : 120).forEach(function (x) { out.push(x); }); } else { out.push(p); }
+      });
+    });
+    return out.filter(function (s) { return /[\p{L}\p{N}]/u.test(s); });
+  }
+
+  /* ---------- UI refs ---------- */
+  var txt = $('txt'), tape = $('tape'), countEl = $('count');
+  var sentences = [], idx = 0, playing = false, token = 0, waitCancel = null, curUtt = null, wakeLock = null;
+  var voices = [];
+
+  function renderTape() {
+    tape.innerHTML = '';
+    if (!sentences.length) {
+      var li = document.createElement('li');
+      li.className = 'empty';
+      li.textContent = '還沒有句子。請在上方輸入文字。';
+      tape.appendChild(li);
+    }
+    sentences.forEach(function (s, i) {
+      var li = document.createElement('li');
+      var b = document.createElement('button');
+      b.type = 'button'; b.className = 'sen'; b.dataset.i = i;
+      var n = document.createElement('span'); n.className = 'n'; n.textContent = String(i + 1).padStart(2, '0');
+      var t = document.createElement('span'); t.className = 't'; t.textContent = s;
+      b.appendChild(n); b.appendChild(t); li.appendChild(b); tape.appendChild(li);
+    });
+    countEl.textContent = sentences.length + ' 句';
+    paintNow(false);
+  }
+  function paintNow(scroll) {
+    var items = tape.querySelectorAll('.sen');
+    items.forEach(function (el, i) {
+      el.classList.toggle('now', i === idx && (playing || scroll));
+      el.classList.toggle('done', playing && i < idx);
+    });
+    if (scroll && items[idx]) {
+      var reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+      items[idx].scrollIntoView({ block: 'nearest', behavior: reduce ? 'auto' : 'smooth' });
+    }
+  }
+  function resplit() {
+    sentences = splitText(txt.value, S.lang);
+    if (idx >= sentences.length) idx = 0;
+    renderTape();
+  }
+
+  /* status */
+  var stBox = $('status'), stMain = $('stMain'), stSub = $('stSub'), bar = $('bar');
+  function setStatus(kind, main, sub) {
+    stBox.className = 'status ' + (kind || '');
+    stMain.textContent = main;
+    stSub.textContent = sub || '';
+  }
+  function resetBar() { bar.style.transition = 'none'; bar.style.width = '0'; }
+  function runBar(ms) {
+    resetBar(); void bar.offsetWidth;
+    bar.style.transition = 'width ' + ms + 'ms linear'; bar.style.width = '100%';
+  }
+  function pos() { return (idx + 1) + ' / ' + sentences.length; }
+  function setPlayIcon() {
+    $('playIcon').innerHTML = playing ? '<path d="M7 5h4v14H7zM13 5h4v14h-4z"/>' : '<path d="M8 5v14l11-7z"/>';
+    $('play').setAttribute('aria-label', playing ? '暫停' : '播放');
+  }
+
+  /* ---------- voices ---------- */
+  function norm(l) { return String(l || '').replace('_', '-'); }
+  function loadVoices() {
+    if (!synth) return;
+    voices = synth.getVoices() || [];
+    fillVoices();
+  }
+  function matching() {
+    var p = prim(S.lang);
+    var exact = voices.filter(function (v) { return norm(v.lang).toLowerCase() === S.lang.toLowerCase(); });
+    var same = voices.filter(function (v) { return prim(v.lang) === p && exact.indexOf(v) < 0; });
+    return exact.concat(same);
+  }
+  function fillVoices() {
+    var sel = $('voice'), list = matching(), want = S.voices[S.lang] || '';
+    sel.innerHTML = '';
+    var d = document.createElement('option'); d.value = ''; d.textContent = '系統預設'; sel.appendChild(d);
+    list.forEach(function (v) {
+      var op = document.createElement('option');
+      op.value = v.voiceURI; op.textContent = v.name + ' (' + norm(v.lang) + ')';
+      sel.appendChild(op);
+    });
+    sel.value = list.some(function (v) { return v.voiceURI === want; }) ? want : '';
+    var hint = $('voiceHint');
+    hint.hidden = list.length > 0;
+    hint.textContent = '這個裝置找不到此語言的聲音。請到手機的系統設定安裝語音。';
+  }
+  function pickVoice() {
+    var uri = S.voices[S.lang];
+    if (!uri) return null;
+    for (var i = 0; i < voices.length; i++) if (voices[i].voiceURI === uri) return voices[i];
+    return null;
+  }
+
+  /* ---------- playback ---------- */
+  function stopSpeech() {
+    token++;
+    if (waitCancel) { waitCancel(); waitCancel = null; }
+    if (synth) { try { synth.cancel(); } catch (e) {} }
+  }
+  function speakOne(text) {
+    return new Promise(function (res) {
+      var u = new SpeechSynthesisUtterance(text);
+      u.lang = S.lang; u.rate = S.rate; u.pitch = S.pitch;
+      var v = pickVoice(); if (v) u.voice = v;
+      var t0 = performance.now(), done = false, wd;
+      function fin() { if (done) return; done = true; clearTimeout(wd); res(performance.now() - t0); }
+      u.onstart = function () { t0 = performance.now(); };
+      u.onend = fin; u.onerror = fin;
+      wd = setTimeout(function () { try { synth.cancel(); } catch (e) {} fin(); }, Math.max(8000, text.length * 400 / S.rate + 4000));
+      curUtt = u;
+      synth.speak(u);
+    });
+  }
+  function wait(ms) {
+    return new Promise(function (res) {
+      var t0 = Date.now(), iv, t;
+      function done() { clearTimeout(t); clearInterval(iv); waitCancel = null; res(); }
+      waitCancel = done;
+      t = setTimeout(done, ms);
+      iv = setInterval(function () {
+        stSub.textContent = (Math.max(0, ms - (Date.now() - t0)) / 1000).toFixed(1) + ' 秒';
+      }, 100);
+      runBar(ms);
+    });
+  }
+  async function run(start, tk) {
+    for (var i = start; i < sentences.length && tk === token; i++) {
+      idx = i; paintNow(true);
+      var reps = S.mode === 'shadow' ? S.repeat : 1;
+      for (var r = 0; r < reps && tk === token; r++) {
+        resetBar();
+        setStatus('listen', '聆聽', pos() + (reps > 1 ? '　第 ' + (r + 1) + ' 遍' : ''));
+        var d = await speakOne(sentences[i]);
+        if (tk !== token) return;
+        if (S.mode === 'shadow' && S.gap > 0) {
+          setStatus('turn', '輪到你跟讀', '');
+          await wait(Math.max(900, d * S.gap));
+          if (tk !== token) return;
+        }
+      }
+    }
+    if (tk === token) {
+      playing = false; releaseLock(); setPlayIcon(); resetBar();
+      idx = 0; paintNow(false);
+      setStatus('', '完成', sentences.length + ' 句');
+    }
+  }
+  function lock() {
+    try { if (navigator.wakeLock) navigator.wakeLock.request('screen').then(function (l) { wakeLock = l; }, function () {}); } catch (e) {}
+  }
+  function releaseLock() { try { if (wakeLock) { wakeLock.release(); wakeLock = null; } } catch (e) {} }
+  function start(i) {
+    if (!synth || !sentences.length) return;
+    stopSpeech();
+    idx = Math.max(0, Math.min(sentences.length - 1, i));
+    playing = true; setPlayIcon(); lock(); paintNow(true);
+    var tk = token;
+    setTimeout(function () { if (tk === token) run(idx, tk); }, 60);
+  }
+  function pause() {
+    playing = false; stopSpeech(); releaseLock(); setPlayIcon(); resetBar(); paintNow(true);
+    setStatus('', '已暫停', pos());
+  }
+  function stopAll() {
+    playing = false; stopSpeech(); releaseLock(); setPlayIcon(); resetBar();
+    idx = 0; paintNow(false);
+    setStatus('', '待命', '');
+  }
+
+  /* ---------- wiring ---------- */
+  var langBox = $('langs');
+  LANGS.forEach(function (l) {
+    var lab = document.createElement('label'); lab.className = 'chip';
+    var inp = document.createElement('input');
+    inp.type = 'radio'; inp.name = 'lang'; inp.value = l[0]; inp.id = 'lang-' + l[0];
+    var sp = document.createElement('span'); sp.textContent = l[1];
+    lab.appendChild(inp); lab.appendChild(sp); langBox.appendChild(lab);
+  });
+  function syncControls() {
+    document.querySelectorAll('input[name="lang"]').forEach(function (e) { e.checked = e.value === S.lang; });
+    document.querySelectorAll('input[name="mode"]').forEach(function (e) { e.checked = e.value === S.mode; });
+    document.querySelectorAll('input[name="repeat"]').forEach(function (e) { e.checked = Number(e.value) === S.repeat; });
+    $('rate').value = S.rate; $('pitch').value = S.pitch; $('gap').value = S.gap; $('soft').checked = !!S.soft;
+    outs(); $('shadowBox').hidden = S.mode !== 'shadow';
+  }
+  function outs() {
+    $('rateOut').textContent = Number(S.rate).toFixed(2) + '×';
+    $('pitchOut').textContent = Number(S.pitch).toFixed(1);
+    $('gapOut').textContent = S.gap === 0 ? '0（同步跟讀）' : Number(S.gap).toFixed(2) + '× 句長';
+  }
+
+  langBox.addEventListener('change', function (e) {
+    if (e.target.name !== 'lang') return;
+    stopAll();
+    S.lang = e.target.value;
+    if (S.sample) { S.text = sampleFor(S.lang); txt.value = S.text; }
+    save(); fillVoices(); resplit();
+  });
+  $('voice').addEventListener('change', function (e) { S.voices[S.lang] = e.target.value; save(); });
+  $('rate').addEventListener('input', function (e) { S.rate = Number(e.target.value); outs(); save(); });
+  $('pitch').addEventListener('input', function (e) { S.pitch = Number(e.target.value); outs(); save(); });
+  $('gap').addEventListener('input', function (e) { S.gap = Number(e.target.value); outs(); save(); });
+  $('soft').addEventListener('change', function (e) { stopAll(); S.soft = e.target.checked; save(); resplit(); });
+  document.querySelectorAll('input[name="mode"]').forEach(function (el) {
+    el.addEventListener('change', function (e) { S.mode = e.target.value; $('shadowBox').hidden = S.mode !== 'shadow'; save(); });
+  });
+  document.querySelectorAll('input[name="repeat"]').forEach(function (el) {
+    el.addEventListener('change', function (e) { S.repeat = Number(e.target.value); save(); });
+  });
+  txt.addEventListener('input', function () {
+    stopAll(); S.sample = false; S.text = txt.value; save(); resplit();
+  });
+  $('sample').addEventListener('click', function () {
+    stopAll(); S.sample = true; S.text = sampleFor(S.lang); txt.value = S.text; save(); resplit();
+  });
+  $('clear').addEventListener('click', function () {
+    stopAll(); S.sample = false; S.text = ''; txt.value = ''; save(); resplit(); txt.focus();
+  });
+  tape.addEventListener('click', function (e) {
+    var b = e.target.closest('.sen'); if (b) start(Number(b.dataset.i));
+  });
+  $('play').addEventListener('click', function () { if (playing) pause(); else start(idx); });
+  $('prev').addEventListener('click', function () { start(idx - 1); });
+  $('next').addEventListener('click', function () { start(idx + 1); });
+  $('stop').addEventListener('click', stopAll);
+  window.addEventListener('pagehide', function () { if (synth) try { synth.cancel(); } catch (e) {} });
+
+  /* ---------- boot ---------- */
+  if (!synth) {
+    $('unsupported').hidden = false;
+    ['play', 'prev', 'next', 'stop'].forEach(function (id) { $(id).disabled = true; });
+  } else {
+    loadVoices();
+    if (synth.addEventListener) synth.addEventListener('voiceschanged', loadVoices);
+    else synth.onvoiceschanged = loadVoices;
+  }
+  txt.value = S.text;
+  syncControls();
+  resplit();
+  setPlayIcon();
+  setStatus('', '待命', '');
+})();
+</script>
+
+</body></html>
