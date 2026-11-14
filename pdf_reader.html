@@ -494,7 +494,7 @@ function buildPrompt(idx, includeCtx) {
     if (refs.length) doneRef = '\n' + refs.join('\n') + '\n';
   }
 
-  return `你是一位嚴謹的學術論文譯者，請把下面這段英文論文翻譯成「繁體中文」（台灣用語）。
+  return `你是一位嚴謹的學術論文譯者，請把下面這段英文論文翻譯成中文。
 
 【全文定位】
 這是第 ${idx + 1} / ${total} 段。
