@@ -1,0 +1,947 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>論文閱讀器 v1.0 ｜ PDF 拖入 → 自動切段 → 連貫翻譯</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    height: 100%;
+    font-family: "Microsoft JhengHei", "PingFang TC", system-ui, sans-serif;
+    background: #0d1420;
+    color: #dbe4ef;
+    overflow: hidden;
+  }
+  body { display: flex; flex-direction: column; }
+
+  /* ---------- Header ---------- */
+  header {
+    flex-shrink: 0;
+    height: 52px;
+    background: #131d2e;
+    border-bottom: 1px solid #253248;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 0 18px;
+  }
+  header .brand { font-size: 15px; font-weight: 700; color: #58b0f5; white-space: nowrap; }
+  header .brand small { display:block; font-size:10px; font-weight:400; color:#64738b; letter-spacing:.06em; }
+  .spacer { flex: 1; }
+  .stat { font-size: 12px; color: #8593a8; white-space: nowrap; }
+  .stat b { color: #7fd3ff; font-weight: 600; }
+
+  .btn {
+    border: none; border-radius: 7px; cursor: pointer;
+    font-family: inherit; font-size: 12.5px; padding: 7px 13px;
+    background: #2563eb; color: #fff; transition: .15s; white-space: nowrap;
+  }
+  .btn:hover { background: #3b82f6; }
+  .btn.ghost { background: #22304a; color: #b7c6dc; }
+  .btn.ghost:hover { background: #2e405f; }
+  .btn.ok { background: #15803d; }
+  .btn.ok:hover { background: #16a34a; }
+  .btn.danger { background: #7f1d1d; color: #fca5a5; }
+  .btn.danger:hover { background: #991b1b; color:#fecaca; }
+  .btn.sm { padding: 4px 9px; font-size: 11.5px; border-radius: 6px; }
+
+  /* ---------- Layout ---------- */
+  #main { flex: 1; display: flex; overflow: hidden; }
+  .col { display: flex; flex-direction: column; overflow: hidden; }
+  #colLeft  { flex: 1 1 50%; border-right: 1px solid #253248; background: #0d1420; }
+  #colRight { flex: 1 1 50%; background: #0a111c; }
+
+  .col-head {
+    flex-shrink: 0;
+    height: 40px;
+    display: flex; align-items: center; gap: 8px;
+    padding: 0 14px;
+    background: #111c2c;
+    border-bottom: 1px solid #1d2839;
+    font-size: 12.5px; font-weight: 600; color: #7fd3ff;
+  }
+  .col-head .tools { margin-left: auto; display: flex; gap: 6px; }
+
+  .scroll { flex: 1; overflow-y: auto; padding: 18px 22px 90px; }
+
+  /* ---------- 段落 ---------- */
+  .seg {
+    position: relative;
+    margin-bottom: 16px;
+    border-radius: 9px;
+    border: 1px solid transparent;
+    padding: 10px 12px;
+    transition: .18s;
+  }
+  .seg:hover { background: #111c2c; }
+  .seg.active { background: #12233a; border-color: #2563eb55; }
+  .seg.blocked { opacity: .45; }
+  .seg .mark {
+    position: absolute; left: -1px; top: 10px; bottom: 10px; width: 3px;
+    border-radius: 3px; background: transparent;
+  }
+  .seg.done .mark { background: #22c55e; }
+
+  .seg .txt {
+    font-size: 15px; line-height: 1.75;
+    color: #c8d4e3;
+    white-space: pre-wrap; word-break: break-word;
+  }
+  .seg.done .txt { color: #9fb0c4; }
+
+  .seg-actions {
+    display: flex; gap: 6px; flex-wrap: wrap;
+    margin-top: 8px; opacity: 0; transition: .15s;
+  }
+  .seg:hover .seg-actions, .seg.active .seg-actions { opacity: 1; }
+
+  /* ---------- 譯文區 ---------- */
+  .zh-block {
+    margin-bottom: 16px; padding: 10px 12px;
+    border-radius: 9px;
+    background: #0e1a29;
+    border: 1px solid #1a2637;
+  }
+  .zh-block .idx {
+    font-size: 10.5px; color: #4d5f78; margin-bottom: 5px; letter-spacing: .05em;
+  }
+  .zh-block .body {
+    font-size: 15px; line-height: 1.85; color: #dbe7f5;
+    white-space: pre-wrap; word-break: break-word;
+  }
+  .zh-block.placeholder .body { color: #3c4b60; font-style: italic; font-size: 13px; }
+
+  textarea, .zh-edit {
+    width: 100%;
+    background: #0a1220;
+    border: 1px solid #24334a;
+    border-radius: 8px;
+    color: #e2e8f0;
+    padding: 9px 11px;
+    font-size: 14.5px;
+    line-height: 1.8;
+    font-family: inherit;
+    resize: vertical;
+    outline: none;
+    min-height: 76px;
+  }
+  textarea:focus, .zh-edit:focus { border-color: #3b82f6; }
+
+  /* ---------- 拖放 / 空狀態 ---------- */
+  #dropZone {
+    height: 100%; display: flex; align-items: center; justify-content: center;
+    padding: 30px;
+  }
+  .drop-card {
+    width: 100%; max-width: 440px; text-align: center;
+    border: 2px dashed #2c3d59; border-radius: 16px;
+    padding: 46px 28px; background: #0f1927;
+    transition: .2s;
+  }
+  .drop-card.hot { border-color: #3b82f6; background: #12233a; }
+  .drop-card .icon { font-size: 44px; margin-bottom: 16px; opacity: .8; }
+  .drop-card h2 { font-size: 17px; color: #cfe0f2; margin-bottom: 10px; font-weight: 600; }
+  .drop-card p { font-size: 12.5px; color: #6b7c93; line-height: 1.9; }
+  .drop-card .kbd {
+    display: inline-block; background: #1d2b3f; border: 1px solid #2f415c;
+    border-radius: 4px; padding: 1px 6px; font-size: 11px; color: #9db0c8;
+    font-family: Consolas, monospace;
+  }
+  .drop-card .divider { margin: 20px 0; color: #3a4a60; font-size: 11px; }
+  .drop-card .pastebox {
+    margin-top: 14px; text-align: left;
+  }
+  .drop-card .pastebox textarea { min-height: 88px; font-size: 13px; }
+
+  /* ---------- 全域覆蓋層 ---------- */
+  #globalDrop {
+    position: fixed; inset: 0; z-index: 900;
+    background: rgba(13,20,32,.94);
+    display: none; align-items: center; justify-content: center;
+    pointer-events: none;
+  }
+  #globalDrop.on { display: flex; }
+  #globalDrop .box {
+    border: 3px dashed #3b82f6; border-radius: 20px;
+    padding: 56px 76px; font-size: 20px; color: #7fd3ff; font-weight: 600;
+    background: #12233a;
+  }
+
+  /* ---------- Modal ---------- */
+  #modalMask {
+    position: fixed; inset: 0; z-index: 800;
+    background: rgba(5,9,16,.78);
+    backdrop-filter: blur(3px);
+    display: none; align-items: center; justify-content: center;
+    padding: 30px;
+  }
+  #modalMask.on { display: flex; }
+  .modal {
+    width: 100%; max-width: 780px; max-height: 88vh;
+    background: #0e1928; border: 1px solid #26364e; border-radius: 14px;
+    display: flex; flex-direction: column; overflow: hidden;
+    box-shadow: 0 30px 80px rgba(0,0,0,.6);
+  }
+  .modal-head {
+    flex-shrink: 0; padding: 13px 18px;
+    background: #12202f; border-bottom: 1px solid #223247;
+    display: flex; align-items: center; gap: 10px;
+    font-size: 13.5px; font-weight: 600; color: #7fd3ff;
+  }
+  .modal-head .x {
+    margin-left: auto; cursor: pointer; color: #64748b; font-size: 18px;
+    line-height: 1; padding: 2px 6px; border-radius: 5px;
+  }
+  .modal-head .x:hover { background: #22304a; color: #cbd5e1; }
+  .modal-body { flex: 1; overflow: auto; padding: 16px; }
+  .modal-body textarea {
+    width: 100%; height: 340px; min-height: 200px;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 12.5px; line-height: 1.65; color: #a5f3fc;
+    background: #08101c; border-color: #1e2f46;
+    white-space: pre; overflow: auto;
+  }
+  .modal-foot {
+    flex-shrink: 0; padding: 12px 16px;
+    background: #0b1521; border-top: 1px solid #1c2b40;
+    display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+  }
+  .modal-foot .tip { font-size: 11.5px; color: #5f7189; margin-left: auto; }
+
+  /* ---------- Toast ---------- */
+  #toast {
+    position: fixed; left: 50%; bottom: 30px; transform: translateX(-50%) translateY(20px);
+    background: #15803d; color: #fff; padding: 11px 22px; border-radius: 9px;
+    font-size: 13.5px; z-index: 1100; opacity: 0; transition: .28s;
+    pointer-events: none; box-shadow: 0 10px 30px rgba(0,0,0,.4);
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  #toast.err { background: #b91c1c; }
+
+  /* ---------- ESC hint ---------- */
+  #escHint {
+    position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%);
+    background: #b91c1c; color: #fff; padding: 10px 20px; border-radius: 8px;
+    font-size: 13px; z-index: 1000; opacity: 0; pointer-events: none;
+    transition: opacity .3s;
+  }
+  #escHint.show { opacity: 1; }
+
+  /* ---------- Loading ---------- */
+  #loading {
+    position: fixed; inset: 0; z-index: 950; display: none;
+    align-items: center; justify-content: center; flex-direction: column; gap: 18px;
+    background: rgba(10,16,26,.92); color: #9db0c8; font-size: 14px;
+  }
+  #loading.on { display: flex; }
+  .spinner {
+    width: 42px; height: 42px; border: 3px solid #22304a;
+    border-top-color: #3b82f6; border-radius: 50%;
+    animation: spin .8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  ::-webkit-scrollbar { width: 11px; height: 11px; }
+  ::-webkit-scrollbar-track { background: #0a1220; }
+  ::-webkit-scrollbar-thumb { background: #26364e; border-radius: 6px; border: 2px solid #0a1220; }
+  ::-webkit-scrollbar-thumb:hover { background: #3a4f6d; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">論文閱讀器 <small>PDF → 自動切段 → 連貫翻譯</small></div>
+  <div class="spacer"></div>
+  <div class="stat" id="statText">尚未載入</div>
+  <button class="btn ghost" id="btnSample">載入範例</button>
+  <button class="btn ghost" id="btnClear">清空</button>
+</header>
+
+<div id="main">
+  <!-- 左：原文 -->
+  <div class="col" id="colLeft">
+    <div class="col-head">
+      <span>📄 原文（PDF 抽取）</span>
+      <div class="tools">
+        <button class="btn sm ghost" id="btnReSplit" title="依目前設定重新切段">↻ 重新切段</button>
+      </div>
+    </div>
+    <div class="scroll" id="srcScroll"></div>
+  </div>
+
+  <!-- 右：譯文 -->
+  <div class="col" id="colRight">
+    <div class="col-head">
+      <span>🈶 中文譯文</span>
+      <div class="tools">
+        <button class="btn sm ghost" id="btnNext" title="跳到下一個未翻譯段落">↓ 下一段</button>
+        <button class="btn sm ghost" id="btnNextPrompt" title="產生「下一段」的翻譯指令（帶上下文）">📋 下一段指令</button>
+      </div>
+    </div>
+    <div class="scroll" id="zhScroll"></div>
+  </div>
+</div>
+
+<!-- 拖放 / 空狀態 -->
+<div id="dropZone" style="display:none; position:fixed; inset:52px 0 0 0; z-index:10;">
+  <div class="drop-card" id="dropCard">
+    <div class="icon">📑</div>
+    <h2>把 PDF 拖到這裡</h2>
+    <p>
+      自動抽取全文 → 按段落切好 → 逐段產生「帶上下文」的翻譯指令<br>
+      不再需要一段一段複製貼上
+    </p>
+    <div class="divider">— 或 —</div>
+    <p>
+      <button class="btn" id="btnPick">選擇 PDF 檔案</button>
+      <input type="file" id="fileInput" accept="application/pdf,.pdf" style="display:none">
+    </p>
+    <div class="pastebox">
+      <p style="text-align:left; margin-bottom:7px; color:#6b7c93;">或直接貼上文字：</p>
+      <textarea id="pasteText" placeholder="把論文文字貼進這裡…"></textarea>
+      <div style="margin-top:8px;">
+        <button class="btn ok" id="btnPasteGo">用這段文字</button>
+      </div>
+    </div>
+    <p style="margin-top:18px; font-size:11.5px; color:#4d5f78;">
+      <span class="kbd">F</span> 全螢幕　<span class="kbd">J</span>/<span class="kbd">K</span> 上下段　<span class="kbd">Esc</span> 關閉提示
+    </p>
+  </div>
+</div>
+
+<!-- 全域拖放提示 -->
+<div id="globalDrop"><div class="box">放開以載入 PDF</div></div>
+
+<!-- 指令 Modal -->
+<div id="modalMask">
+  <div class="modal">
+    <div class="modal-head">
+      <span id="modalTitle">📋 翻譯指令</span>
+      <span class="x" id="modalClose">✕</span>
+    </div>
+    <div class="modal-body">
+      <textarea id="modalPrompt" spellcheck="false"></textarea>
+    </div>
+    <div class="modal-foot">
+      <button class="btn ok" id="btnCopyPrompt">📋 複製指令</button>
+      <button class="btn ghost" id="btnCopySegOnly">只複製原文</button>
+      <label style="font-size:12px;color:#8593a8;display:flex;align-items:center;gap:5px;cursor:pointer;">
+        <input type="checkbox" id="optCtx" checked> 帶入前後段落上下文
+      </label>
+      <span class="tip">貼給 ChatGPT / Claude / Gemini 即可</span>
+    </div>
+  </div>
+</div>
+
+<!-- Loading -->
+<div id="loading">
+  <div class="spinner"></div>
+  <div id="loadingText">正在解析 PDF…</div>
+</div>
+
+<div id="toast"></div>
+<div id="escHint">已離開全螢幕。要關閉分頁請按 Ctrl+W（⌘+W）</div>
+
+<!-- pdf.js -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>
+/* =========================================================
+   論文閱讀器 — 單檔工具
+   流程：PDF/文字 → 抽取 → 切段 → 逐段產生翻譯指令
+   ========================================================= */
+
+// ---------- pdf.js worker ----------
+if (window.pdfjsLib) {
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+}
+
+// ---------- 狀態 ----------
+const state = {
+  source: '',        // 全文
+  segments: [],      // [{ src, zh, done }]
+  activeIdx: 0,
+  docName: ''
+};
+
+// ---------- 工具 ----------
+const $ = (s) => document.querySelector(s);
+const $$ = (s) => Array.from(document.querySelectorAll(s));
+
+let toastTimer = null;
+function toast(msg, isErr) {
+  const el = $('#toast');
+  el.textContent = msg;
+  el.classList.toggle('err', !!isErr);
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2200);
+}
+
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function setLoading(on, text) {
+  $('#loading').classList.toggle('on', on);
+  if (text) $('#loadingText').textContent = text;
+}
+
+/* =========================================================
+   1. 文字切段
+   - 先把連字號換行、多餘空白修掉
+   - 依「段落」切：連續空行或句子結尾 + 大寫開頭
+   - 太短的合併、太長的再切
+   ========================================================= */
+function normalizeText(raw) {
+  let t = raw.replace(/\r\n?/g, '\n');
+  // 修掉 PDF 斷字： "exam-\nple" → "example"
+  t = t.replace(/([A-Za-z])-\n([a-z])/g, '$1$2');
+  // 單一換行（PDF 常硬換行）→ 空白
+  t = t.replace(/([^\n])\n(?!\n)/g, '$1 ');
+  // 壓多空白
+  t = t.replace(/[ \t\u00A0]+/g, ' ');
+  // 壓多空行
+  t = t.replace(/\n{3,}/g, '\n\n');
+  return t.trim();
+}
+
+function splitParagraphs(text) {
+  // 以空行切
+  let paras = text.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
+
+  // 若幾乎沒空行（PDF 常見），改用「句尾 + 下一句大寫」方式粗切
+  if (paras.length <= 1) {
+    paras = [];
+    // 用 ". " 後接大寫字母 當邊界，累積到一定長度才切
+    const raw = text.replace(/\n/g, ' ');
+    const sentences = raw.split(/(?<=[.!?])\s+(?=[A-Z"“(])/);
+    let buf = '';
+    for (const s of sentences) {
+      buf += (buf ? ' ' : '') + s;
+      if (buf.length > 420) { paras.push(buf.trim()); buf = ''; }
+    }
+    if (buf.trim()) paras.push(buf.trim());
+  }
+
+  // 後處理：合併太短、切太長
+  const out = [];
+  const MIN = 100, MAX = 1100;
+  for (let p of paras) {
+    if (out.length && out[out.length-1].length < MIN) {
+      out[out.length-1] += ' ' + p;
+      p = null;
+    }
+    if (p === null) continue;
+    if (p.length > MAX) {
+      // 太長：依句子再切
+      const ss = p.split(/(?<=[.!?])\s+(?=[A-Z"“(])/);
+      let buf = '';
+      for (const s of ss) {
+        if (buf && (buf + ' ' + s).length > MAX) { out.push(buf.trim()); buf = s; }
+        else buf += (buf ? ' ' : '') + s;
+      }
+      if (buf.trim()) out.push(buf.trim());
+    } else {
+      out.push(p);
+    }
+  }
+  // 尾巴太短併回
+  if (out.length > 1 && out[out.length-1].length < MIN) {
+    out[out.length-2] += ' ' + out[out.length-1];
+    out.pop();
+  }
+  return out.filter(s => s.length > 2);
+}
+
+function splitHeadersAndFilter(paras) {
+  // 若抽到如 "3 METHOD", "References" 等純標題，仍保留但不誤當正文。
+  return paras;
+}
+
+/* =========================================================
+   2. 產生翻譯指令（帶上下文）
+   ========================================================= */
+function buildPrompt(idx, includeCtx) {
+  const seg = state.segments[idx];
+  if (!seg) return '';
+  const total = state.segments.length;
+
+  let prevCtx = '（這是全文第一段）';
+  let nextCtx = '（這是最後一段）';
+
+  if (includeCtx) {
+    if (idx > 0) {
+      const p = state.segments[idx - 1];
+      prevCtx = truncate(p.src, 520);
+    }
+    if (idx < total - 1) {
+      const n = state.segments[idx + 1];
+      nextCtx = truncate(n.src, 320);
+    }
+  }
+
+  // 前面已翻好的段落，當作語感參考（取最近 2 段）
+  let doneRef = '';
+  if (includeCtx) {
+    const refs = [];
+    for (let i = idx - 1; i >= 0 && refs.length < 2; i--) {
+      if (state.segments[i].done && state.segments[i].zh) {
+        refs.unshift(`【第${i+1}段·已定稿譯文】\n${truncate(state.segments[i].zh, 400)}`);
+      }
+    }
+    if (refs.length) doneRef = '\n' + refs.join('\n') + '\n';
+  }
+
+  return `你是一位嚴謹的學術論文譯者，請把下面這段英文論文翻譯成「繁體中文」（台灣用語）。
+
+【全文定位】
+這是第 ${idx + 1} / ${total} 段。
+
+【上一段原文（僅供理解，不要翻譯）】
+${prevCtx}
+
+【下一段原文（僅供理解銜接，不要翻譯）】
+${nextCtx}
+${doneRef}
+【翻譯要求】
+1. 保留學術論文語氣；避免過度口語、避免「翻得很活潑」。
+2. 專有名詞第一次出現時附英文原文，例如：檢索增強生成（retrieval-augmented generation）。
+3. 縮寫保留原文：LLM、RAG、F1、BLEU 等不譯。
+4. 數字、公式、變數、引用標號（如 [12]、圖 3）原樣保留。
+5. 不要增譯、不要省略、不要自行補充說明或結論。
+6. 長句可適度拆成短句，但不可改變原意或改變論述順序。
+7. 若原句有明顯歧義，翻完後在最前面用「⚠」一行簡短說明，不要長篇解釋。
+
+【本段原文（第 ${idx + 1} 段）】
+${seg.src}
+
+請直接輸出譯文，不要重複原文，不要加任何前言後語。`;
+}
+
+function truncate(s, n) {
+  s = s.replace(/\s+/g, ' ').trim();
+  return s.length > n ? s.slice(0, n) + ' …' : s;
+}
+
+/* =========================================================
+   3. 渲染
+   ========================================================= */
+function render() {
+  renderSource();
+  renderZh();
+  renderStat();
+}
+
+function renderStat() {
+  const total = state.segments.length;
+  const done = state.segments.filter(s => s.done).length;
+  if (!total) {
+    $('#statText').textContent = '尚未載入';
+  } else {
+    $('#statText').innerHTML =
+      `${esc(state.docName || '未命名')} ｜ <b>${done}/${total}</b> 段已翻`;
+  }
+}
+
+function renderSource() {
+  const box = $('#srcScroll');
+  if (!state.segments.length) { box.innerHTML = ''; return; }
+
+  box.innerHTML = state.segments.map((s, i) => `
+    <div class="seg ${i===state.activeIdx?'active':''} ${s.done?'done':''}" data-idx="${i}">
+      <div class="mark"></div>
+      <div class="txt">${esc(s.src)}</div>
+      <div class="seg-actions">
+        <button class="btn sm" data-act="prompt" data-idx="${i}">📋 產生指令</button>
+        <button class="btn sm ghost" data-act="focus" data-idx="${i}">🎯 定位</button>
+        <button class="btn sm ${s.done?'ghost':''}" data-act="toggle" data-idx="${i}">${s.done?'↺ 取消完成':'✓ 標記完成'}</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function renderZh() {
+  const box = $('#zhScroll');
+  if (!state.segments.length) { box.innerHTML = ''; return; }
+
+  box.innerHTML = state.segments.map((s, i) => {
+    const cls = s.zh ? 'zh-block' : 'zh-block placeholder';
+    const body = s.zh
+      ? `<div class="body" data-edit="${i}">${esc(s.zh)}</div>`
+      : `<div class="body">尚未翻譯 —— 按上方「📋 產生指令」複製給 AI，再把譯文貼回這裡</div>`;
+    return `
+      <div class="${cls}" data-idx="${i}" id="zh-${i}">
+        <div class="idx">第 ${i+1} 段 ${s.done ? '· ✓' : ''}</div>
+        ${body}
+        <div style="margin-top:7px; display:flex; gap:6px;">
+          <button class="btn sm ghost" data-zact="paste" data-idx="${i}">✎ 貼上/修改譯文</button>
+          ${s.zh ? `<button class="btn sm ghost" data-zact="copy" data-idx="${i}">📋 複製譯文</button>` : ''}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+/* =========================================================
+   4. 互動
+   ========================================================= */
+// 左欄按鈕
+$('#srcScroll').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-act]');
+  if (!btn) {
+    const seg = e.target.closest('.seg');
+    if (seg) { state.activeIdx = +seg.dataset.idx; render(); syncScroll(); }
+    return;
+  }
+  const idx = +btn.dataset.idx;
+  const act = btn.dataset.act;
+
+  if (act === 'prompt') openPrompt(idx);
+  else if (act === 'toggle') {
+    const s = state.segments[idx];
+    s.done = !s.done;
+    render(); persist();
+  } else if (act === 'focus') {
+    state.activeIdx = idx;
+    render(); syncScroll();
+    const z = document.getElementById('zh-' + idx);
+    if (z) z.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+});
+
+// 右欄按鈕
+$('#zhScroll').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-zact]');
+  if (!btn) return;
+  const idx = +btn.dataset.idx;
+  const act = btn.dataset.zact;
+
+  if (act === 'paste') {
+    const s = state.segments[idx];
+    const v = prompt(
+      `貼上第 ${idx+1} 段的中文譯文（留空並確定＝清空）：`,
+      s.zh || ''
+    );
+    if (v === null) return;
+    s.zh = v.trim();
+    if (s.zh) s.done = true;
+    render(); persist();
+    toast('已更新第 ' + (idx+1) + ' 段譯文');
+  } else if (act === 'copy') {
+    copyText(state.segments[idx].zh);
+  }
+});
+
+// 左右滾動同步（比例）
+let syncing = false;
+$('#srcScroll').addEventListener('scroll', () => {
+  if (syncing) return; syncing = true;
+  const a = $('#srcScroll'), b = $('#zhScroll');
+  const pa = a.scrollTop / Math.max(1, a.scrollHeight - a.clientHeight);
+  b.scrollTop = pa * (b.scrollHeight - b.clientHeight);
+  syncing = false;
+});
+$('#zhScroll').addEventListener('scroll', () => {
+  if (syncing) return; syncing = true;
+  const a = $('#srcScroll'), b = $('#zhScroll');
+  const pb = b.scrollTop / Math.max(1, b.scrollHeight - b.clientHeight);
+  a.scrollTop = pb * (a.scrollHeight - a.clientHeight);
+  syncing = false;
+});
+
+function syncScroll() {
+  const segEl = document.querySelector(`.seg[data-idx="${state.activeIdx}"]`);
+  if (segEl) segEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  const zhEl = document.getElementById('zh-' + state.activeIdx);
+  if (zhEl) zhEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+/* =========================================================
+   5. Modal 指令
+   ========================================================= */
+let modalIdx = -1;
+function openPrompt(idx) {
+  modalIdx = idx;
+  state.activeIdx = idx;
+  updatePrompt();
+  $('#modalMask').classList.add('on');
+  $('#modalPrompt').focus();
+  $('#modalPrompt').setSelectionRange(0,0);
+  renderSource();
+}
+function updatePrompt() {
+  if (modalIdx < 0) return;
+  const inc = $('#optCtx').checked;
+  $('#modalTitle').textContent = `📋 第 ${modalIdx+1}/${state.segments.length} 段 — 翻譯指令`;
+  $('#modalPrompt').value = buildPrompt(modalIdx, inc);
+}
+$('#optCtx').addEventListener('change', updatePrompt);
+
+$('#modalClose').addEventListener('click', () => $('#modalMask').classList.remove('on'));
+$('#modalMask').addEventListener('click', (e) => {
+  if (e.target.id === 'modalMask') $('#modalMask').classList.remove('on');
+});
+
+$('#btnCopyPrompt').addEventListener('click', () => {
+  const ta = $('#modalPrompt');
+  ta.select();
+  copyText(ta.value);
+});
+$('#btnCopySegOnly').addEventListener('click', () => {
+  copyText(state.segments[modalIdx].src);
+});
+
+function copyText(txt) {
+  if (!txt) { toast('沒有內容可複製', true); return; }
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(txt)
+      .then(() => toast('✓ 已複製到剪貼簿'))
+      .catch(() => fallbackCopy(txt));
+  } else fallbackCopy(txt);
+}
+function fallbackCopy(txt) {
+  const ta = document.createElement('textarea');
+  ta.value = txt;
+  ta.style.cssText = 'position:fixed;top:-9999px;left:-9999px;';
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand('copy'); toast('✓ 已複製'); }
+  catch { toast('複製失敗，請手動 Ctrl+C', true); }
+  document.body.removeChild(ta);
+}
+
+/* =========================================================
+   6. 載入 PDF
+   ========================================================= */
+async function loadPdfFile(file) {
+  if (!window.pdfjsLib) { toast('pdf.js 未載入（請確認網路）', true); return; }
+  setLoading(true, '正在開啟 ' + file.name + ' …');
+  try {
+    const buf = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+    let full = '';
+    for (let p = 1; p <= pdf.numPages; p++) {
+      setLoading(true, `解析中… 第 ${p} / ${pdf.numPages} 頁`);
+      const page = await pdf.getPage(p);
+      const tc = await page.getTextContent();
+      // 依 y 座標分行，較接近原始排版
+      const items = tc.items;
+      let lineY = null, line = '';
+      const lines = [];
+      for (const it of items) {
+        const y = it.transform[5];
+        if (lineY === null || Math.abs(y - lineY) < 3) {
+          line += it.str;
+          lineY = y;
+        } else {
+          lines.push(line);
+          line = it.str;
+          lineY = y;
+        }
+      }
+      if (line) lines.push(line);
+      full += lines.join('\n') + '\n\n';
+    }
+    setLoading(false);
+    applyText(full, file.name);
+    toast(`✓ 已載入 ${pdf.numPages} 頁`);
+  } catch (err) {
+    setLoading(false);
+    console.error(err);
+    toast('PDF 解析失敗：' + err.message, true);
+  }
+}
+
+function applyText(raw, name) {
+  const norm = normalizeText(raw);
+  let paras = splitParagraphs(norm);
+  paras = splitHeadersAndFilter(paras);
+
+  state.source = norm;
+  state.docName = name || '貼上的文字';
+  state.segments = paras.map(p => ({ src: p, zh: '', done: false }));
+  state.activeIdx = 0;
+
+  // 舊譯文若有相同段落可嘗試沿用（簡單比對）
+  restoreZhForNewSegments();
+
+  $('#dropZone').style.display = 'none';
+  render();
+  persist();
+
+  if (!state.segments.length) {
+    toast('沒有抽到文字（可能是掃描圖 PDF，需 OCR）', true);
+  }
+}
+
+function restoreZhForNewSegments() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('pdfReaderZh') || '{}');
+    state.segments.forEach(s => {
+      const key = s.src.slice(0, 80);
+      if (saved[key]) { s.zh = saved[key]; s.done = true; }
+    });
+  } catch(e) {}
+}
+
+function persist() {
+  try {
+    const map = {};
+    state.segments.forEach(s => {
+      if (s.zh) map[s.src.slice(0, 80)] = s.zh;
+    });
+    localStorage.setItem('pdfReaderZh', JSON.stringify(map));
+  } catch(e) {}
+}
+
+/* =========================================================
+   7. 拖放 & 選檔
+   ========================================================= */
+document.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  $('#globalDrop').classList.add('on');
+});
+document.addEventListener('dragleave', (e) => {
+  if (e.relatedTarget === null) $('#globalDrop').classList.remove('on');
+});
+document.addEventListener('drop', (e) => {
+  e.preventDefault();
+  $('#globalDrop').classList.remove('on');
+  const f = e.dataTransfer.files && e.dataTransfer.files[0];
+  if (!f) return;
+  if (/\.pdf$/i.test(f.name) || f.type === 'application/pdf') {
+    loadPdfFile(f);
+  } else {
+    toast('請拖入 PDF 檔案', true);
+  }
+});
+
+$('#btnPick').addEventListener('click', () => $('#fileInput').click());
+$('#fileInput').addEventListener('change', (e) => {
+  const f = e.target.files[0];
+  if (f) loadPdfFile(f);
+});
+
+$('#btnPasteGo').addEventListener('click', () => {
+  const t = $('#pasteText').value.trim();
+  if (!t) { toast('請先貼上文字', true); return; }
+  applyText(t, '手動貼上的文字');
+});
+
+$('#btnSample').addEventListener('click', () => {
+  const sample = `With the recent popularity of AI agents in both research and industry, alongside rapid advancements within this domain, we have begun to see an emergence of literature reviews attempting to consolidate and analyze the history and progress made within this evolving field.
+
+However, these existing surveys often focus on a narrow slice of the agent ecosystem. Retrieval-augmented generation has become a standard component of such systems, yet its interaction with long-horizon planning remains underexplored.
+
+In this work, we propose a unified framework that decomposes agent behavior into perception, memory, planning, and action modules. Each module is evaluated independently, and their composition is analyzed under controlled conditions.
+
+Our experiments on three benchmark suites show consistent gains over strong baselines. We report improvements of 4.2 points in task success rate and a 21% reduction in token consumption.`;
+  applyText(sample, '範例文字');
+});
+
+$('#btnClear').addEventListener('click', () => {
+  if (!confirm('清空目前載入的內容？（已存的譯文快取仍保留）')) return;
+  state.source = '';
+  state.segments = [];
+  state.activeIdx = 0;
+  state.docName = '';
+  $('#dropZone').style.display = '';
+  render();
+});
+
+$('#btnReSplit').addEventListener('click', () => {
+  if (!state.source) { toast('尚未載入內容', true); return; }
+  if (!confirm('依目前文字重新切段？（已貼上的譯文會盡量沿用）')) return;
+  const paras = splitParagraphs(state.source);
+  const old = state.segments;
+  state.segments = paras.map((p, i) => {
+    const match = old.find(o => o.src === p);
+    return match ? { ...match } : { src: p, zh: '', done: false };
+  });
+  state.activeIdx = 0;
+  render(); persist();
+  toast('已重新切段為 ' + state.segments.length + ' 段');
+});
+
+$('#btnNext').addEventListener('click', () => {
+  const i = state.segments.findIndex(s => !s.done);
+  if (i < 0) { toast('全部段落都已完成 🎉'); return; }
+  state.activeIdx = i;
+  render(); syncScroll();
+});
+
+$('#btnNextPrompt').addEventListener('click', () => {
+  const i = state.segments.findIndex(s => !s.done);
+  if (i < 0) { toast('全部段落都已完成 🎉'); return; }
+  openPrompt(i);
+});
+
+/* =========================================================
+   8. 鍵盤
+   ========================================================= */
+function goFullscreen() {
+  const el = document.documentElement;
+  if (!document.fullscreenElement) {
+    const p = el.requestFullscreen ? el.requestFullscreen() :
+              el.webkitRequestFullscreen ? el.webkitRequestFullscreen() :
+              el.msRequestFullscreen ? el.msRequestFullscreen() : null;
+    if (p && p.catch) p.catch(() => toast('瀏覽器阻擋了全螢幕', true));
+  } else {
+    (document.exitFullscreen || document.webkitExitFullscreen || function(){}).call(document);
+  }
+}
+
+document.addEventListener('keydown', (e) => {
+  const tag = (e.target.tagName || '').toLowerCase();
+  const typing = tag === 'input' || tag === 'textarea';
+  const modalOpen = $('#modalMask').classList.contains('on');
+
+  // Esc 關 modal
+  if (e.key === 'Escape' && modalOpen) {
+    $('#modalMask').classList.remove('on');
+    return;
+  }
+
+  if (typing) return;
+
+  const k = e.key.toLowerCase();
+  if (k === 'f') { e.preventDefault(); goFullscreen(); }
+  if (k === 'escape') {
+    const h = $('#escHint');
+    h.classList.add('show');
+    setTimeout(() => h.classList.remove('show'), 3000);
+  }
+  if (k === 'j' && state.segments.length) {
+    state.activeIdx = Math.min(state.segments.length - 1, state.activeIdx + 1);
+    render(); syncScroll();
+  }
+  if (k === 'k' && state.segments.length) {
+    state.activeIdx = Math.max(0, state.activeIdx - 1);
+    render(); syncScroll();
+  }
+  if (k === 'enter' && !e.ctrlKey) {
+    if (state.segments.length) openPrompt(state.activeIdx);
+  }
+});
+
+document.addEventListener('fullscreenchange', () => {
+  if (!document.fullscreenElement) {
+    const h = $('#escHint');
+    h.classList.add('show');
+    setTimeout(() => h.classList.remove('show'), 2800);
+  }
+});
+
+/* =========================================================
+   9. 啟動
+   ========================================================= */
+(function init() {
+  // 預設顯示拖放畫面
+  $('#dropZone').style.display = '';
+  render();
+})();
+</script>
+</body>
+</html>
