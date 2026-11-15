@@ -1651,16 +1651,11 @@
       prevChunk && prevChunk.status === "done" ? prevChunk.a2Text.slice(-500) : null;
 
     const systemPrompt = [
-      "You are an expert English teacher and academic editor.",
-      "Your job is to rewrite ONLY the [TARGET CHUNK] of an academic research paper into clear, natural CEFR A2 level English.",
+      "rewrite to  [TARGET CHUNK] of an academic research paper to CEFR A2 level English and keep detail",
       "",
       "Rules:",
-      "1. Use simple, everyday vocabulary (roughly the most common 1,500–2,000 English words).",
-      "2. Write short, clear sentences (usually 8–15 words each, active voice).",
-      "3. Keep ALL important facts, logic, numbers, methods, and findings accurate. Do NOT omit key meaning.",
-      "4. If an essential technical term cannot be avoided, keep the term and explain it briefly in simple A2 words inside parentheses.",
-      "5. Use [PREVIOUS CONTEXT] and [NEXT CONTEXT] ONLY to understand references and keep flow consistent. Do NOT translate or repeat the context chunks.",
-      "6. Output ONLY the rewritten A2 English text for [TARGET CHUNK], preserving paragraph breaks."
+      "1. Use [PREVIOUS CONTEXT] and [NEXT CONTEXT] ONLY to understand references and keep flow consistent. Do NOT translate or repeat the context chunks.",
+      "2. Output ONLY the rewritten A2 English text for [TARGET CHUNK], preserving paragraph breaks."
     ].join("\n");
 
     let userPrompt = `[PREVIOUS CONTEXT - DO NOT TRANSLATE]\n${prevSnippet}\n\n`;
@@ -1766,7 +1761,7 @@
 
     const sys =
       mode === "zh"
-        ? "你是專業的英文學術論文翻譯老師。請將使用者反白選取的 [SELECTED TEXT] 翻譯成自然、準確的繁體中文。若選取的是單字或專有名詞，請提供：1) 繁中翻譯與詞性，2) 依論文上下文的白話簡短解釋。簡潔明瞭即可，不要贅述。"
+        ? "請將使用者反白選取的 [SELECTED TEXT] 翻譯成中文。) 簡潔明瞭即可，不要贅述。"
         : "Rewrite the [SELECTED TEXT] into very simple, clear CEFR A2 level English (common words, short sentences). Output only the A2 English version.";
 
     const user = contextSnippet
