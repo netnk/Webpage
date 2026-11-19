@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Excel → XML 轉換工具</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px;
+    font-family: "Microsoft JhengHei", "Segoe UI", system-ui, sans-serif;
+    background: #0f172a; color: #e2e8f0;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { font-size: 13px; color: #94a3b8; margin-bottom: 20px; }
+  .card {
+    background: #1e293b; border: 1px solid #334155; border-radius: 10px;
+    padding: 18px; margin-bottom: 18px;
+  }
+  .card h2 { font-size: 14px; margin: 0 0 12px; color: #93c5fd; font-weight: 600; }
+
+  #drop {
+    border: 2px dashed #475569; border-radius: 10px; padding: 28px;
+    text-align: center; cursor: pointer; transition: .15s;
+    color: #94a3b8; font-size: 14px;
+  }
+  #drop:hover, #drop.over { border-color: #3b82f6; background: #1e293b; color: #bfdbfe; }
+  #drop b { color: #60a5fa; }
+
+  .maplist { display: grid; gap: 8px; }
+  .maprow {
+    display: grid; grid-template-columns: 190px 1fr; gap: 10px; align-items: center;
+  }
+  .maprow label { font-size: 13px; color: #cbd5e1; }
+  .maprow label .req { color: #f87171; margin-left: 3px; }
+  .maprow select, .maprow input[type=text] {
+    width: 100%; padding: 7px 9px; border-radius: 7px;
+    background: #0f172a; color: #e2e8f0; border: 1px solid #475569;
+    font-size: 13px; font-family: inherit;
+  }
+  .maprow select:focus, .maprow input[type=text]:focus { outline: none; border-color: #3b82f6; }
+
+  .btns { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 4px; }
+  button {
+    padding: 9px 18px; border-radius: 8px; border: none; cursor: pointer;
+    font-size: 13px; font-family: inherit; font-weight: 600; transition: .15s;
+  }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  .primary { background: #2563eb; color: #fff; }
+  .primary:not(:disabled):hover { background: #1d4ed8; }
+  .ghost { background: #334155; color: #e2e8f0; }
+  .ghost:not(:disabled):hover { background: #475569; }
+
+  .opts { display: flex; flex-wrap: wrap; gap: 18px; font-size: 13px; color: #cbd5e1; }
+  .opts label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+  input[type=checkbox] { accent-color: #2563eb; width: 15px; height: 15px; }
+  .xmlnames { display: grid; gap: 8px; margin-top: 14px; }
+
+  #out {
+    width: 100%; min-height: 300px; padding: 14px; border-radius: 8px;
+    background: #0b1220; color: #a5f3fc; border: 1px solid #334155;
+    font-family: "Consolas", "Courier New", monospace; font-size: 12.5px;
+    line-height: 1.55; resize: vertical; white-space: pre; overflow: auto;
+  }
+  .status { font-size: 12.5px; margin-top: 10px; color: #94a3b8; }
+  .status.ok { color: #4ade80; }
+  .status.err { color: #f87171; }
+  .preview { margin-top: 14px; overflow: auto; max-height: 260px; border-radius: 8px; border: 1px solid #334155; }
+  table { border-collapse: collapse; font-size: 12px; width: 100%; }
+  th, td { border-bottom: 1px solid #334155; padding: 5px 8px; text-align: left; white-space: nowrap; }
+  th { background: #1e293b; color: #93c5fd; position: sticky; top: 0; }
+  .hint { font-size: 12px; color: #64748b; margin-top: 8px; line-height: 1.6; }
+</style>
+</head>
+<body>
+
+<h1>Excel → XML 轉換工具</h1>
+<div class="sub">支援 .xlsx / .xls / .csv，全部在你的瀏覽器本機處理，資料不會上傳。</div>
+
+<!-- 1. 選檔 -->
+<div class="card">
+  <h2>① 選擇 Excel 檔案</h2>
+  <div id="drop">拖曳檔案到這裡，或 <b>點此選擇檔案</b>
+    <input type="file" id="file" accept=".xlsx,.xls,.csv" hidden>
+  </div>
+  <div id="fileStatus" class="status"></div>
+</div>
+
+<!-- 2. 工作表 + 欄位對應 -->
+<div class="card" id="mapCard" style="display:none;">
+  <h2>② 選擇工作表與欄位對應</h2>
+  <div class="maprow" style="margin-bottom:14px;">
+    <label>工作表</label>
+    <select id="sheetSel"></select>
+  </div>
+  <div class="maplist" id="mapList"></div>
+  <div class="hint">左邊是 XML 要的欄位，右邊選 Excel 對應的欄位。<span style="color:#f87171">*</span> 建議至少對應「標題」。未對應或空白欄位會輸出空元素（如 <code>&lt;作者/&gt;</code>）。</div>
+</div>
+
+<!-- 3. 選項 -->
+<div class="card" id="optCard" style="display:none;">
+  <h2>③ 輸出選項</h2>
+  <div class="opts">
+    <label><input type="checkbox" id="optSkipEmpty" checked> 略過「標題」為空的列</label>
+    <label><input type="checkbox" id="optTrim" checked> 去除欄位前後空白</label>
+    <label><input type="checkbox" id="optRocDate" checked> 出版年月轉民國年（西元 → 民國 + 月）</label>
+    <label><input type="checkbox" id="optDecl" checked> 加入 XML 宣告（&lt;?xml ...?&gt;）</label>
+  </div>
+  <div class="xmlnames">
+    <div class="maprow"><label>根元素名稱</label><input type="text" id="rootName" value="books"></div>
+    <div class="maprow"><label>每筆資料元素名稱</label><input type="text" id="itemName" value="book"></div>
+  </div>
+  <div class="hint">
+    民國年規則：<code>2026</code> → <code>11501</code>；<code>2026/3/15</code> → <code>11503</code>（有月份就取月份，沒月份預設 <code>01</code>）；已是民國格式（如 <code>11501</code>）則原樣保留。<br>
+    XML 特殊字元（<code>&amp; &lt; &gt; " '</code>）會自動跳脫。子元素名稱使用上方的中文欄位名（XML 允許中文標籤）。
+  </div>
+</div>
+
+<!-- 4. 輸出 -->
+<div class="card" id="outCard" style="display:none;">
+  <h2>④ XML 結果</h2>
+  <div class="btns" style="margin-bottom:12px;">
+    <button class="primary" id="btnConvert">產生 XML</button>
+    <button class="ghost" id="btnCopy" disabled>複製</button>
+    <button class="ghost" id="btnDownload" disabled>下載 .xml</button>
+    <button class="ghost" id="btnCsv" disabled>下載 .csv</button>
+  </div>
+  <textarea id="out" spellcheck="false" placeholder="按「產生 XML」後，結果會顯示在這裡…"></textarea>
+  <div id="outStatus" class="status"></div>
+  <div class="preview" id="preview"></div>
+</div>
+
+<script>
+// ===== 目標欄位 =====
+const TARGET_FIELDS = [
+  { key: "作者",                 required: false },
+  { key: "出版單位",             required: false },
+  { key: "版次",                 required: false },
+  { key: "出版年月",             required: false },
+  { key: "標題",                 required: true  },
+  { key: "中文圖書分類法類號",   required: false },
+  { key: "美國國會分類法類號",   required: false },
+  { key: "杜威十進分類法類號",   required: false },
+  { key: "ISBN",                 required: false },
+  { key: "ISSN",                 required: false },
+  { key: "ISRC",                 required: false },
+  { key: "單位",                 required: false },
+  { key: "頁數",                 required: false },
+  { key: "資料來源網址",         required: false },
+];
+
+const ALIASES = {
+  "作者": ["作者","著者","撰文","author"],
+  "出版單位": ["出版單位","出版者","出版社","publisher"],
+  "版次": ["版次","版本","edition"],
+  "出版年月": ["出版年月","出版日期","出版年","日期","date"],
+  "標題": ["標題","書名","題名","title"],
+  "中文圖書分類法類號": ["中文圖書分類法類號","中文分類號","中文圖書分類號"],
+  "美國國會分類法類號": ["美國國會分類法類號","美國國會分類號","LCC","LC分類號"],
+  "杜威十進分類法類號": ["杜威十進分類法類號","杜威分類號","DDC"],
+  "ISBN": ["ISBN","isbn"],
+  "ISSN": ["ISSN","issn"],
+  "ISRC": ["ISRC","isrc"],
+  "單位": ["單位","館別","機構","unit"],
+  "頁數": ["頁數","頁次","pages"],
+  "資料來源網址": ["資料來源網址","網址","URL","連結","link","source"],
+};
+
+let workbook = null;
+let headers = [];
+let rows = [];
+
+const $ = id => document.getElementById(id);
+
+// ===== 拖放 / 選檔 =====
+const drop = $("drop"), fileInput = $("file");
+drop.addEventListener("click", () => fileInput.click());
+drop.addEventListener("dragover", e => { e.preventDefault(); drop.classList.add("over"); });
+drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+drop.addEventListener("drop", e => {
+  e.preventDefault(); drop.classList.remove("over");
+  if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener("change", e => { if (e.target.files.length) handleFile(e.target.files[0]); });
+
+function handleFile(file) {
+  const st = $("fileStatus");
+  st.className = "status"; st.textContent = "讀取中… " + file.name;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try {
+      workbook = XLSX.read(new Uint8Array(ev.target.result), { type: "array", cellDates: false, raw: false });
+      st.className = "status ok";
+      st.textContent = "✓ 已載入：" + file.name + "（共 " + workbook.SheetNames.length + " 個工作表）";
+      buildSheetSelect();
+      $("mapCard").style.display = "";
+      $("optCard").style.display = "";
+      $("outCard").style.display = "";
+    } catch (err) {
+      st.className = "status err"; st.textContent = "✗ 讀取失敗：" + err.message;
+    }
+  };
+  reader.onerror = () => { st.className = "status err"; st.textContent = "✗ 檔案讀取失敗"; };
+  reader.readAsArrayBuffer(file);
+}
+
+// ===== 工作表選擇 =====
+function buildSheetSelect() {
+  const sel = $("sheetSel");
+  sel.innerHTML = "";
+  workbook.SheetNames.forEach(name => {
+    const o = document.createElement("option");
+    o.value = name; o.textContent = name;
+    sel.appendChild(o);
+  });
+  sel.onchange = () => loadSheet(sel.value);
+  loadSheet(workbook.SheetNames[0]);
+}
+
+function loadSheet(name) {
+  const ws = workbook.Sheets[name];
+  const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "", blankrows: false, raw: false });
+  if (!aoa.length) {
+    headers = []; rows = [];
+    buildMapList();
+    return;
+  }
+  headers = aoa[0].map((h, i) => {
+    let s = String(h == null ? "" : h).trim();
+    return s || ("欄位" + (i + 1));
+  });
+  rows = [];
+  for (let r = 1; r < aoa.length; r++) {
+    const arr = aoa[r];
+    const o = {};
+    headers.forEach((h, i) => { o[h] = arr[i] == null ? "" : arr[i]; });
+    rows.push(o);
+  }
+  buildMapList();
+  $("fileStatus").className = "status ok";
+  $("outStatus").className = "status";
+  $("outStatus").textContent = "工作表「" + name + "」：" + rows.length + " 筆資料、 " + headers.length + " 個欄位。";
+}
+
+// ===== 欄位對應 UI =====
+function buildMapList() {
+  const box = $("mapList");
+  box.innerHTML = "";
+  TARGET_FIELDS.forEach(f => {
+    const row = document.createElement("div");
+    row.className = "maprow";
+
+    const label = document.createElement("label");
+    label.innerHTML = f.key + (f.required ? '<span class="req">*</span>' : "");
+
+    const sel = document.createElement("select");
+    sel.dataset.target = f.key;
+    const optNone = document.createElement("option");
+    optNone.value = ""; optNone.textContent = "（不輸出 / 空元素）";
+    sel.appendChild(optNone);
+    headers.forEach(h => {
+      const o = document.createElement("option");
+      o.value = h; o.textContent = h;
+      sel.appendChild(o);
+    });
+    const guess = guessHeader(f.key);
+    if (guess) sel.value = guess;
+
+    row.appendChild(label);
+    row.appendChild(sel);
+    box.appendChild(row);
+  });
+}
+
+function guessHeader(targetKey) {
+  const names = ALIASES[targetKey] || [targetKey];
+  for (const n of names) {
+    const hit = headers.find(h => h === n);
+    if (hit) return hit;
+  }
+  for (const n of names) {
+    const ln = n.toLowerCase();
+    const hit = headers.find(h => h.toLowerCase().includes(ln));
+    if (hit) return hit;
+  }
+  return "";
+}
+
+// ===== 取值 =====
+function getMapping() {
+  const map = {};
+  document.querySelectorAll("#mapList select").forEach(sel => {
+    map[sel.dataset.target] = sel.value;
+  });
+  return map;
+}
+
+function getVal(obj, header, trim) {
+  let v = obj[header];
+  if (v == null) v = "";
+  v = String(v);
+  if (trim) v = v.trim();
+  return v;
+}
+
+// ===== 出版年月 → 民國年 (YYYMM) =====
+function toRocDate(raw) {
+  let s = String(raw == null ? "" : raw).trim();
+  if (!s) return "";
+
+  let year = null, month = null;
+  let m;
+
+  m = s.match(/^(\d{4})\s*年\s*(\d{1,2})\s*月/);
+  if (m) { year = +m[1]; month = +m[2]; }
+
+  if (year === null) {
+    m = s.match(/^(\d{4})[\/\-\.\s](\d{1,2})(?:[\/\-\.\s]\d{1,2})?/);
+    if (m) { year = +m[1]; month = +m[2]; }
+  }
+
+  if (year === null) {
+    m = s.match(/^(\d{2,3})\s*年\s*(\d{1,2})\s*月/);
+    if (m) {
+      const y = +m[1];
+      month = +m[2];
+      return padRoc(y, month);
+    }
+  }
+
+  if (year === null) {
+    m = s.match(/^(\d{4})$/);
+    if (m) { year = +m[1]; month = 1; }
+  }
+
+  if (year === null) {
+    m = s.match(/^(\d{5,6})$/);
+    if (m) {
+      const v = m[1];
+      if (v.length === 5) {
+        const y = +v.slice(0, 3), mo = +v.slice(3);
+        if (mo >= 1 && mo <= 12) return padRoc(y, mo);
+      } else if (v.length === 6) {
+        const y = +v.slice(0, 4), mo = +v.slice(4);
+        if (y > 1900) return padRoc(y - 1911, mo);
+        return padRoc(+v.slice(0,3), +v.slice(3));
+      }
+    }
+    m = s.match(/^(\d{3})$/);
+    if (m) {
+      const y = +m[1];
+      if (y < 300) return padRoc(y, 1);
+    }
+  }
+
+  if (year === null) {
+    m = s.match(/^(\d{5})$/);
+    if (m) {
+      const serial = +m[1];
+      if (serial > 20000 && serial < 80000) {
+        const d = excelSerialToDate(serial);
+        if (d) return padRoc(d.getFullYear() - 1911, d.getMonth() + 1);
+      }
+    }
+  }
+
+  if (year !== null) {
+    let roc;
+    if (year > 1911) {
+      roc = year - 1911;
+    } else {
+      roc = year;
+    }
+    return padRoc(roc, month || 1);
+  }
+
+  return s;
+}
+
+function padRoc(roc, month) {
+  if (!isFinite(roc) || roc < 0) return "";
+  const mo = (month >= 1 && month <= 12) ? month : 1;
+  return String(roc) + String(mo).padStart(2, "0");
+}
+
+function excelSerialToDate(serial) {
+  const utcDays = serial - 25569;
+  const ms = utcDays * 86400 * 1000;
+  const d = new Date(ms);
+  if (isNaN(d.getTime())) return null;
+  return { getFullYear: () => d.getUTCFullYear(), getMonth: () => d.getUTCMonth() };
+}
+
+// ===== 收集資料（XML / CSV 共用）=====
+function collectItems() {
+  const map = getMapping();
+  const skipEmpty = $("optSkipEmpty").checked;
+  const trim = $("optTrim").checked;
+  const rocDate = $("optRocDate").checked;
+
+  if (!map["標題"]) return { error: "請先為「標題」選擇對應的 Excel 欄位。" };
+
+  const items = [];
+  let rocChanged = 0;
+  rows.forEach(r => {
+    const titleVal = getVal(r, map["標題"], trim);
+    if (skipEmpty && titleVal === "") return;
+
+    const item = {};
+    TARGET_FIELDS.forEach(f => {
+      const h = map[f.key];
+      let v = h ? getVal(r, h, trim) : "";
+      if (f.key === "出版年月" && rocDate && v !== "") {
+        const nv = toRocDate(v);
+        if (nv !== v) rocChanged++;
+        v = nv;
+      }
+      item[f.key] = v;
+    });
+    items.push(item);
+  });
+  return { items, rocChanged, rocDate };
+}
+
+// ===== XML 產生 =====
+// 移除 XML 1.0 不允許的控制字元，並跳脫特殊字元
+function xmlEsc(s) {
+  return String(s == null ? "" : s)
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/g, "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+// 檢查是否為合法的 XML 元素名稱（允許中文）
+function validXmlName(n) {
+  return /^[A-Za-z_\u00C0-\uFFFF][\w.\-\u00B7\u00C0-\uFFFF]*$/.test(n) && !/^xml/i.test(n);
+}
+
+function buildXml(items, rootName, itemName, withDecl) {
+  const out = [];
+  if (withDecl) out.push('<?xml version="1.0" encoding="UTF-8"?>');
+  out.push("<" + rootName + ">");
+  items.forEach(it => {
+    out.push("  <" + itemName + ">");
+    TARGET_FIELDS.forEach(f => {
+      const v = it[f.key];
+      if (v === "" || v == null) out.push("    <" + f.key + "/>");
+      else out.push("    <" + f.key + ">" + xmlEsc(v) + "</" + f.key + ">");
+    });
+    out.push("  </" + itemName + ">");
+  });
+  out.push("</" + rootName + ">");
+  return out.join("\n");
+}
+
+function convert() {
+  const res = collectItems();
+  if (res.error) { setOut("", "err", "✗ " + res.error); return; }
+
+  const rootName = $("rootName").value.trim() || "books";
+  const itemName = $("itemName").value.trim() || "book";
+  if (!validXmlName(rootName) || !validXmlName(itemName)) {
+    setOut("", "err", "✗ 根元素或資料元素名稱不合法（不可以數字開頭、不可含空白或特殊符號，也不可以 xml 開頭）。");
+    return;
+  }
+
+  const xml = buildXml(res.items, rootName, itemName, $("optDecl").checked);
+  setOut(xml, "ok", "✓ 已產生 " + res.items.length + " 筆 XML（共 " + rows.length + " 列）。" +
+    (res.rocDate ? " 其中 " + res.rocChanged + " 筆「出版年月」已轉為民國年格式。" : ""));
+  renderPreview(res.items);
+  $("btnCopy").disabled = false;
+  $("btnDownload").disabled = false;
+  $("btnCsv").disabled = false;
+}
+
+function setOut(text, cls, msg) {
+  $("out").value = text;
+  const st = $("outStatus");
+  st.className = "status " + (cls || "");
+  st.textContent = msg || "";
+}
+
+// ===== 預覽 =====
+function renderPreview(data) {
+  const box = $("preview");
+  if (!data.length) { box.innerHTML = ""; return; }
+  const cols = TARGET_FIELDS.map(f => f.key);
+  let html = "<table><thead><tr>";
+  cols.forEach(c => html += "<th>" + esc(c) + "</th>");
+  html += "</tr></thead><tbody>";
+  data.slice(0, 50).forEach(row => {
+    html += "<tr>";
+    cols.forEach(c => html += "<td>" + esc(row[c]) + "</td>");
+    html += "</tr>";
+  });
+  html += "</tbody></table>";
+  if (data.length > 50) html += '<div class="hint" style="padding:6px 8px;">僅預覽前 50 筆，完整結果請複製或下載。</div>';
+  box.innerHTML = html;
+}
+
+function esc(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+// ===== 按鈕 =====
+$("btnConvert").addEventListener("click", convert);
+
+$("btnCopy").addEventListener("click", async () => {
+  const text = $("out").value;
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+    $("outStatus").className = "status ok";
+    $("outStatus").textContent = "✓ 已複製到剪貼簿。";
+  } catch {
+    $("out").select(); document.execCommand("copy");
+    $("outStatus").className = "status ok";
+    $("outStatus").textContent = "✓ 已複製（使用備援方式）。";
+  }
+});
+
+function download(filename, text, mime) {
+  const blob = new Blob([text], { type: mime || "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+}
+
+$("btnDownload").addEventListener("click", () => {
+  const text = $("out").value;
+  if (!text) return;
+  download("books.xml", text, "application/xml;charset=utf-8");
+});
+
+$("btnCsv").addEventListener("click", () => {
+  const res = collectItems();
+  if (res.error) { $("outStatus").className = "status err"; $("outStatus").textContent = "✗ " + res.error; return; }
+  const cols = TARGET_FIELDS.map(f => f.key);
+  const lines = [cols.map(csvCell).join(",")];
+  res.items.forEach(it => lines.push(cols.map(c => csvCell(it[c])).join(",")));
+  download("books.csv", "\uFEFF" + lines.join("\r\n"), "text/csv;charset=utf-8");
+});
+
+function csvCell(v) {
+  const s = String(v == null ? "" : v);
+  return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+</script>
+</body>
+</html>
