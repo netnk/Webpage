@@ -8,3 +8,4 @@ Webpage
 [JSON Chunks 合併工具](https://netnk.github.io/Webpage/merge_chunks.html)<br />
 [pdf_reader](https://netnk.github.io/Webpage/pdf_reader.html)<br />
 [pdf_reader2](https://netnk.github.io/Webpage/pdf_reader2.html)<br />
+[book-cover-finder](https://netnk.github.io/Webpage/book-cover-finder.html)<br />
