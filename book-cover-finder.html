@@ -1,0 +1,563 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>書封網址查詢工具</title>
+<style>
+  :root{--bg:#f6f7f9;--card:#fff;--tx:#1d2939;--sub:#667085;--bd:#e4e7ec;--pri:#2563eb;--ok:#12b76a;--none:#f79009;--err:#f04438;--pend:#d0d5dd}
+  @media (prefers-color-scheme:dark){:root{--bg:#101828;--card:#1d2939;--tx:#f2f4f7;--sub:#98a2b3;--bd:#344054;--pend:#475467}}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--tx);font:14px/1.6 -apple-system,"Noto Sans TC","Microsoft JhengHei",sans-serif}
+  main{max-width:1040px;margin:0 auto;padding:20px 16px 60px}
+  h1{font-size:22px;margin:0 0 4px}
+  .sub{color:var(--sub);margin:0 0 16px}
+  section{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:16px;margin-bottom:14px}
+  h2{font-size:15px;margin:0 0 10px}
+  label{display:inline-flex;align-items:center;gap:6px;margin:4px 14px 4px 0}
+  input[type=text],input[type=number],select,textarea{background:var(--bg);color:var(--tx);border:1px solid var(--bd);border-radius:6px;padding:5px 8px;font:inherit}
+  input[type=text]{width:300px;max-width:100%}
+  input[type=number]{width:78px}
+  textarea{width:100%;height:90px;font-family:monospace}
+  button{background:var(--pri);color:#fff;border:0;border-radius:6px;padding:7px 14px;font:inherit;cursor:pointer;margin:4px 6px 4px 0}
+  button.sec{background:transparent;color:var(--tx);border:1px solid var(--bd)}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  .row{margin:6px 0}
+  .hint{color:var(--sub);font-size:12px}
+  .bar{height:10px;background:var(--pend);border-radius:5px;overflow:hidden;margin:8px 0}
+  .bar>i{display:block;height:100%;width:0;background:var(--pri);transition:width .3s}
+  .stats{display:flex;flex-wrap:wrap;gap:6px 22px}
+  .stats b{font-variant-numeric:tabular-nums}
+  .dot{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:middle}
+  canvas{display:block;width:100%;border:1px solid var(--bd);border-radius:6px;image-rendering:pixelated;background:var(--bg)}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--bd);vertical-align:middle}
+  td img{width:44px;height:62px;object-fit:cover;border-radius:3px;background:var(--bd)}
+  .tag{padding:1px 7px;border-radius:10px;color:#fff;font-size:12px}
+  .t-ok{background:var(--ok)}.t-none{background:var(--none)}.t-error{background:var(--err)}
+  .banner{background:#fffaeb;color:#7a2e0e;border:1px solid #fedf89;border-radius:8px;padding:10px 12px;margin-bottom:14px;display:none}
+  #log{max-height:120px;overflow:auto;font:12px/1.5 monospace;color:var(--sub);white-space:pre-wrap}
+  a{color:var(--pri)}
+</style>
+</head>
+<body>
+<main>
+  <h1>書封網址查詢工具</h1>
+  <p class="sub">以書名（可含作者、出版社）查詢 Google Books / Open Library，取得封面圖片網址。全部在瀏覽器內執行，進度自動存檔，可中斷續跑。</p>
+
+  <div class="banner" id="restoreBanner">
+    <span id="restoreText"></span>
+    <button id="btnRestore">還原上次進度</button>
+    <button class="sec" id="btnDiscard">捨棄</button>
+  </div>
+
+  <section>
+    <h2>1. 載入資料</h2>
+    <div class="row">
+      <input type="file" id="file" accept=".csv,.txt,.tsv">
+      <label>編碼
+        <select id="enc"><option value="UTF-8">UTF-8</option><option value="Big5">Big5（舊版 Excel 中文 CSV）</option></select>
+      </label>
+      <label><input type="checkbox" id="hasHeader" checked>第一列是欄位名稱</label>
+    </div>
+    <div class="row hint">支援 CSV / TXT（每行一筆）。Excel 請先另存為「CSV UTF-8」。也可直接貼上：</div>
+    <textarea id="paste" placeholder="書名,作者,出版社&#10;活著,余華,麥田&#10;挪威的森林,村上春樹,時報"></textarea>
+    <div class="row">
+      <button class="sec" id="btnParsePaste">解析貼上的內容</button>
+      <button class="sec" id="btnSample">載入範例</button>
+    </div>
+    <div class="row" id="mapRow" style="display:none">
+      欄位對應：
+      <label>書名*<select id="colTitle"></select></label>
+      <label>作者<select id="colAuthor"></select></label>
+      <label>出版社<select id="colPub"></select></label>
+      <button id="btnApplyMap">套用</button>
+      <span class="hint" id="loadedInfo"></span>
+    </div>
+  </section>
+
+  <section>
+    <h2>2. 設定</h2>
+    <div class="row">
+      <label>Google Books API Key（建議填，否則很快遇到限流）
+        <input type="text" id="apiKey" placeholder="AIza...">
+      </label>
+    </div>
+    <div class="row">
+      <label>同時請求數 <input type="number" id="conc" value="3" min="1" max="10"></label>
+      <label>每次間隔(ms) <input type="number" id="delay" value="300" min="0" step="50"></label>
+      <label>相似度門檻 <input type="number" id="thr" value="0.6" min="0.3" max="1" step="0.05"></label>
+      <label>圖片尺寸 <select id="zoom"><option value="1">小 (zoom=1)</option><option value="2">中 (zoom=2)</option><option value="3">大 (zoom=3)</option></select></label>
+    </div>
+    <div class="row">
+      <label><input type="checkbox" id="optS2T" checked>找不到時，改用簡體書名再查一次</label>
+      <label><input type="checkbox" id="optOL">Google 找不到時，用 Open Library 當備援</label>
+      <label><input type="checkbox" id="optVerify">驗證圖片可載入（較慢，會多一次圖片請求）</label>
+    </div>
+    <div class="hint">每本書最壞情況會發出 2～4 次 API 請求，2 萬筆請預留足夠的 API 額度。額度用完（連續 429）時，工具會自動暫停並存檔，隔天再按「繼續」即可。</div>
+  </section>
+
+  <section>
+    <h2>3. 執行</h2>
+    <div class="row">
+      <button id="btnStart" disabled>開始 / 繼續</button>
+      <button class="sec" id="btnPause" disabled>暫停</button>
+      <button class="sec" id="btnRetry" disabled>重跑「未找到／錯誤」</button>
+      <button class="sec" id="btnExport" disabled>匯出 CSV</button>
+      <button class="sec" id="btnReset" disabled>清除全部進度</button>
+    </div>
+    <div class="bar"><i id="barFill"></i></div>
+    <div class="stats">
+      <span>進度 <b id="sDone">0</b> / <b id="sTotal">0</b></span>
+      <span><span class="dot" style="background:var(--ok)"></span>找到 <b id="sOk">0</b></span>
+      <span><span class="dot" style="background:var(--none)"></span>未找到 <b id="sNone">0</b></span>
+      <span><span class="dot" style="background:var(--err)"></span>錯誤 <b id="sErr">0</b></span>
+      <span>命中率 <b id="sRate">-</b></span>
+      <span>速度 <b id="sSpeed">-</b></span>
+      <span>預估剩餘 <b id="sEta">-</b></span>
+    </div>
+    <div class="row hint">進度圖（每格 = 一本書；<span class="dot" style="background:var(--pend)"></span>待處理 <span class="dot" style="background:var(--ok)"></span>找到 <span class="dot" style="background:var(--none)"></span>未找到 <span class="dot" style="background:var(--err)"></span>錯誤）</div>
+    <canvas id="map" width="960" height="40"></canvas>
+    <div class="row" id="log"></div>
+  </section>
+
+  <section>
+    <h2>4. 結果預覽</h2>
+    <div class="row">
+      <label>顯示
+        <select id="filter">
+          <option value="all">全部（最近 100 筆）</option>
+          <option value="ok">只看找到</option>
+          <option value="none">只看未找到</option>
+          <option value="error">只看錯誤</option>
+        </select>
+      </label>
+    </div>
+    <table>
+      <thead><tr><th>封面</th><th>輸入書名 / 作者</th><th>比對到的書</th><th>分數</th><th>來源</th><th>狀態</th></tr></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </section>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/localforage/1.10.0/localforage.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/opencc-js@1.0.5/dist/umd/full.js"></script>
+<script>
+(function(){
+'use strict';
+const $ = id => document.getElementById(id);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+/* ---------- 簡繁轉換（OpenCC 載入失敗時退回原字串） ---------- */
+let toSimp = s => s, toTrad = s => s;
+try {
+  const a = OpenCC.Converter({ from: 'tw', to: 'cn' });
+  const b = OpenCC.Converter({ from: 'cn', to: 'tw' });
+  toSimp = s => { try { return a(s); } catch(e){ return s; } };
+  toTrad = s => { try { return b(s); } catch(e){ return s; } };
+} catch(e) { log('OpenCC 未載入，簡繁轉換停用。'); }
+
+/* ---------- 狀態 ---------- */
+let header = null;          // 原始欄位名稱
+let raw = [];               // 原始資料列（陣列）
+let rows = [];              // {title, author, publisher}
+let res = [];               // 每筆結果
+let order = [];             // 完成順序（預覽用）
+let running = false, blockedUntil = 0, consec429 = 0;
+let runStart = 0, doneThisRun = 0, dirty = false;
+let parsedGrid = null;      // 解析後的原始格狀資料
+
+const COLORS = { pend:'#d0d5dd', ok:'#12b76a', none:'#f79009', error:'#f04438' };
+const store = localforage.createInstance({ name: 'bookCoverFinder' });
+
+function log(msg){
+  const el = $('log');
+  el.textContent += new Date().toLocaleTimeString() + '  ' + msg + '\n';
+  el.scrollTop = el.scrollHeight;
+}
+
+/* ---------- 載入與解析 ---------- */
+$('file').addEventListener('change', e => {
+  const f = e.target.files[0]; if (!f) return;
+  Papa.parse(f, {
+    encoding: $('enc').value, skipEmptyLines: true,
+    complete: r => gridLoaded(r.data),
+    error: err => alert('解析失敗：' + err.message)
+  });
+});
+$('btnParsePaste').onclick = () => {
+  const t = $('paste').value.trim(); if (!t) return;
+  const r = Papa.parse(t, { skipEmptyLines: true });
+  gridLoaded(r.data);
+};
+$('btnSample').onclick = () => {
+  $('paste').value = '書名,作者,出版社\n活著,余華,麥田\n挪威的森林,村上春樹,時報\n小王子,,\n人類大歷史,哈拉瑞,天下文化\n不存在的書名測試XYZ,無名氏,';
+  $('hasHeader').checked = true;
+  $('btnParsePaste').click();
+};
+$('hasHeader').addEventListener('change', () => { if (parsedGrid) gridLoaded(parsedGrid); });
+
+function gridLoaded(grid){
+  parsedGrid = grid;
+  if (!grid.length) return alert('沒有讀到資料');
+  const hasH = $('hasHeader').checked;
+  const cols = Math.max(...grid.slice(0, 50).map(r => r.length));
+  const names = hasH ? grid[0].map((x,i)=> String(x||('欄'+(i+1)))) : Array.from({length:cols},(_,i)=>'欄'+(i+1));
+  while (names.length < cols) names.push('欄'+(names.length+1));
+  const opts = names.map((n,i)=>`<option value="${i}">${esc(n)}</option>`).join('');
+  const none = '<option value="-1">（無）</option>';
+  $('colTitle').innerHTML = opts;
+  $('colAuthor').innerHTML = none + opts;
+  $('colPub').innerHTML = none + opts;
+  // 自動猜欄位
+  const guess = (re, def) => { const i = names.findIndex(n => re.test(n)); return i >= 0 ? i : def; };
+  $('colTitle').value = guess(/書名|書籍|title|name|品名/i, 0);
+  $('colAuthor').value = guess(/作者|author|著/i, -1);
+  $('colPub').value = guess(/出版|publisher|社/i, -1);
+  header = names;
+  $('mapRow').style.display = '';
+  $('loadedInfo').textContent = `共 ${grid.length - (hasH?1:0)} 筆資料，請確認欄位後按「套用」`;
+}
+
+$('btnApplyMap').onclick = async () => {
+  const hasH = $('hasHeader').checked;
+  const data = parsedGrid.slice(hasH ? 1 : 0);
+  const ti = +$('colTitle').value, ai = +$('colAuthor').value, pi = +$('colPub').value;
+  raw = data;
+  rows = data.map(r => ({
+    title: String(r[ti] ?? '').trim(),
+    author: ai >= 0 ? String(r[ai] ?? '').trim() : '',
+    publisher: pi >= 0 ? String(r[pi] ?? '').trim() : ''
+  }));
+  res = new Array(rows.length);
+  order = [];
+  await persist(true);
+  initUI();
+  log(`已載入 ${rows.length} 筆。`);
+};
+
+/* ---------- 存檔 / 還原 ---------- */
+async function persist(full){
+  try {
+    if (full) { await store.setItem('rows', rows); await store.setItem('raw', raw); await store.setItem('header', header); }
+    await store.setItem('res', res);
+  } catch(e){ log('存檔失敗：' + e.message); }
+}
+async function checkRestore(){
+  try {
+    const r = await store.getItem('rows');
+    if (r && r.length) {
+      const rs = (await store.getItem('res')) || [];
+      const done = rs.filter(Boolean).length;
+      $('restoreText').textContent = `發現上次進度：${r.length} 筆，已處理 ${done} 筆。`;
+      $('restoreBanner').style.display = 'block';
+      $('btnRestore').onclick = async () => {
+        rows = r; raw = (await store.getItem('raw')) || []; header = await store.getItem('header');
+        res = new Array(rows.length);
+        rs.forEach((x,i)=>{ if (x) res[i] = x; });
+        order = []; res.forEach((x,i)=>{ if (x) order.push(i); });
+        $('restoreBanner').style.display = 'none';
+        initUI(); log('已還原上次進度。');
+      };
+      $('btnDiscard').onclick = async () => { await store.clear(); $('restoreBanner').style.display = 'none'; };
+    }
+    const s = await store.getItem('settings');
+    if (s) for (const k in s) { const el = $(k); if (!el) continue; if (el.type === 'checkbox') el.checked = s[k]; else el.value = s[k]; }
+  } catch(e){}
+}
+const SETTING_IDS = ['apiKey','conc','delay','thr','zoom','optS2T','optOL','optVerify'];
+function saveSettings(){
+  const s = {}; SETTING_IDS.forEach(k => { const el = $(k); s[k] = el.type === 'checkbox' ? el.checked : el.value; });
+  store.setItem('settings', s).catch(()=>{});
+}
+SETTING_IDS.forEach(k => $(k).addEventListener('change', saveSettings));
+
+/* ---------- 比對 ---------- */
+function norm(s){
+  return toSimp(String(s||'')).toLowerCase().replace(/[\s\p{P}\p{S}]/gu, '');
+}
+function dice(a, b){
+  if (a === b) return a ? 1 : 0;
+  if (!a || !b) return 0;
+  const n = (a.length < 2 || b.length < 2) ? 1 : 2;
+  const grams = s => { const m = new Map(); for (let i=0;i<=s.length-n;i++){ const g=s.substr(i,n); m.set(g,(m.get(g)||0)+1);} return m; };
+  const A = grams(a), B = grams(b); let inter = 0, ta = 0, tb = 0;
+  A.forEach(v => ta += v); B.forEach(v => tb += v);
+  A.forEach((v,k) => { if (B.has(k)) inter += Math.min(v, B.get(k)); });
+  return ta + tb ? 2 * inter / (ta + tb) : 0;
+}
+function titleScore(q, c){
+  let s = dice(q, c);
+  const minL = Math.min(q.length, c.length), maxL = Math.max(q.length, c.length);
+  if (minL >= 3 && (q.includes(c) || c.includes(q))) s = Math.max(s, 0.7 + 0.3 * minL / maxL);
+  return s;
+}
+function authorMatch(rowAuthor, candAuthors){
+  const toks = rowAuthor.split(/[,，、;；\/\s]+/).map(norm).filter(t => t.length >= 2);
+  if (!toks.length || !candAuthors.length) return null;   // 無法判斷
+  const cs = candAuthors.map(norm);
+  return toks.some(t => cs.some(c => c.includes(t) || t.includes(c) || dice(t, c) >= 0.6));
+}
+function scoreCand(c, row){
+  const q = norm(row.title);
+  let s = Math.max(titleScore(q, norm(c.title)), c.subtitle ? titleScore(q, norm(c.title + c.subtitle)) : 0);
+  if (row.author) { const m = authorMatch(row.author, c.authors || []); if (m === true) s += 0.08; else if (m === false) s -= 0.12; }
+  if (row.publisher && c.publisher && norm(c.publisher).includes(norm(row.publisher).slice(0,3))) s += 0.03;
+  return Math.max(0, Math.min(1, s));
+}
+function pickBest(cands, row){
+  let best = null;
+  for (const c of cands) { if (!c.url) continue; const s = scoreCand(c, row); if (!best || s > best.score) best = { ...c, score: s }; }
+  return best;
+}
+
+/* ---------- 網路請求 ---------- */
+async function fetchJSON(url){
+  const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 15000);
+  try {
+    const r = await fetch(url, { signal: ctl.signal });
+    if (r.status === 429 || r.status === 403) { const e = new Error('HTTP ' + r.status); e.rate = true; throw e; }
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return await r.json();
+  } finally { clearTimeout(t); }
+}
+async function fetchRetry(url){
+  let lastErr;
+  for (let i = 0; i < 3; i++) {
+    try { return await fetchJSON(url); }
+    catch(e){ if (e.rate) throw e; lastErr = e; await sleep(600 * (i + 1)); }
+  }
+  throw lastErr;
+}
+function cleanGoogleImg(u){
+  if (!u) return '';
+  u = u.replace(/^http:/, 'https:').replace(/&edge=curl/g, '');
+  const z = $('zoom').value;
+  return /zoom=\d/.test(u) ? u.replace(/zoom=\d/, 'zoom=' + z) : u + '&zoom=' + z;
+}
+async function googleSearch(q){
+  const key = $('apiKey').value.trim();
+  const url = 'https://www.googleapis.com/books/v1/volumes?q=' + encodeURIComponent(q) +
+    '&maxResults=5&printType=books&fields=items(volumeInfo(title,subtitle,authors,publisher,imageLinks))' +
+    (key ? '&key=' + encodeURIComponent(key) : '');
+  const d = await fetchRetry(url);
+  return (d.items || []).map(it => {
+    const v = it.volumeInfo || {}, il = v.imageLinks || {};
+    return { title: v.title || '', subtitle: v.subtitle || '', authors: v.authors || [], publisher: v.publisher || '',
+             url: cleanGoogleImg(il.thumbnail || il.smallThumbnail), src: 'Google Books' };
+  });
+}
+async function openLibSearch(title, author){
+  let url = 'https://openlibrary.org/search.json?limit=5&fields=title,author_name,publisher,cover_i&title=' + encodeURIComponent(title);
+  if (author) url += '&author=' + encodeURIComponent(author);
+  const d = await fetchRetry(url);
+  return (d.docs || []).map(x => ({
+    title: x.title || '', authors: x.author_name || [], publisher: (x.publisher || [])[0] || '',
+    url: x.cover_i ? `https://covers.openlibrary.org/b/id/${x.cover_i}-L.jpg` : '', src: 'Open Library'
+  }));
+}
+function loadImg(url){
+  return new Promise(resolve => {
+    const im = new Image(); im.referrerPolicy = 'no-referrer';
+    const t = setTimeout(() => resolve(null), 10000);
+    im.onload = () => { clearTimeout(t); resolve({ w: im.naturalWidth, h: im.naturalHeight }); };
+    im.onerror = () => { clearTimeout(t); resolve(null); };
+    im.src = url;
+  });
+}
+
+/* ---------- 單筆查詢 ---------- */
+async function lookup(row){
+  const th = parseFloat($('thr').value) || 0.6;
+  if (!row.title) return { status: 'none', msg: '書名空白' };
+  const attempts = [];
+  const t1 = row.title, t2 = toSimp(row.title);
+  const a1 = row.author, a2 = toSimp(row.author);
+  attempts.push(() => googleSearch(`intitle:${t1}` + (a1 ? ` inauthor:${a1}` : '')));
+  attempts.push(() => googleSearch(a1 ? `${t1} ${a1}` : t1));
+  if ($('optS2T').checked && t2 !== t1) attempts.push(() => googleSearch(`intitle:${t2}` + (a2 ? ` inauthor:${a2}` : '')));
+  if ($('optOL').checked) attempts.push(() => openLibSearch(t1, a1));
+
+  for (const run of attempts) {
+    const best = pickBest(await run(), row);
+    if (best && best.score >= th) {
+      if ($('optVerify').checked) {
+        const dim = await loadImg(best.url);
+        if (!dim || dim.w < 60) continue;
+      }
+      return { status: 'ok', url: best.url, mt: best.title + (best.subtitle ? '：' + best.subtitle : ''),
+               ma: (best.authors || []).join('、'), score: +best.score.toFixed(2), src: best.src };
+    }
+  }
+  return { status: 'none' };
+}
+
+/* ---------- 執行器 ---------- */
+let queue = [], ptr = 0, retryQ = [], active = 0, workers = [];
+
+async function startRun(){
+  if (running || !rows.length) return;
+  queue = []; for (let i = 0; i < rows.length; i++) if (!res[i]) queue.push(i);
+  if (!queue.length) { log('沒有待處理的項目。'); return; }
+  ptr = 0; retryQ = []; active = 0; consec429 = 0; blockedUntil = 0;
+  running = true; runStart = Date.now(); doneThisRun = 0;
+  setButtons();
+  const n = Math.max(1, Math.min(10, +$('conc').value || 3));
+  log(`開始處理 ${queue.length} 筆（並發 ${n}）。`);
+  const ticker = setInterval(() => { if (dirty) { dirty = false; updateStats(); renderTable(); } }, 500);
+  let sinceSave = 0;
+
+  async function worker(){
+    while (running) {
+      const now = Date.now();
+      if (now < blockedUntil) { await sleep(Math.min(1000, blockedUntil - now)); continue; }
+      const i = retryQ.length ? retryQ.shift() : (ptr < queue.length ? queue[ptr++] : -1);
+      if (i < 0) { if (active === 0) break; await sleep(200); continue; }
+      active++;
+      try {
+        res[i] = await lookup(rows[i]);
+        consec429 = 0;
+        finishItem(i);
+        if (++sinceSave >= 25) { sinceSave = 0; persist(false); }
+      } catch(e) {
+        if (e.rate) {
+          retryQ.push(i);
+          consec429++;
+          blockedUntil = Date.now() + 15000 * consec429;
+          log(`遇到限流 (${e.message})，等待 ${15 * consec429} 秒後重試。`);
+          if (consec429 >= 5) { running = false; log('連續限流，疑似已達額度上限，已自動暫停。請稍後或隔天再按「開始 / 繼續」，或填入 API Key。'); }
+        } else {
+          res[i] = { status: 'error', msg: String(e.message || e) };
+          finishItem(i);
+        }
+      } finally { active--; }
+      const d = Math.max(0, +$('delay').value || 0);
+      if (d) await sleep(d);
+    }
+  }
+  workers = Array.from({ length: n }, worker);
+  await Promise.all(workers);
+  clearInterval(ticker);
+  const finished = res.every(Boolean);
+  running = false;
+  await persist(false);
+  updateStats(); renderTable(); setButtons();
+  log(finished ? '全部處理完成。' : '已暫停，進度已存檔。');
+}
+function finishItem(i){
+  order.push(i); doneThisRun++; dirty = true; drawCell(i);
+}
+function pauseRun(){ running = false; log('暫停中…（等待進行中的請求結束）'); }
+
+/* ---------- 畫面 ---------- */
+const cv = $('map'), ctx = cv.getContext('2d');
+let cell = 2, cols = 480;
+function layoutMap(){
+  const W = 960, n = Math.max(rows.length, 1);
+  cell = Math.max(2, Math.floor(Math.sqrt(W * 120 / n)));
+  if (n < 2000) cell = Math.max(cell, 8);
+  cols = Math.floor(W / cell);
+  cv.width = W; cv.height = Math.max(cell, Math.ceil(n / cols) * cell);
+}
+function drawCell(i){
+  const r = res[i];
+  ctx.fillStyle = r ? COLORS[r.status] : COLORS.pend;
+  ctx.fillRect((i % cols) * cell, Math.floor(i / cols) * cell, cell - (cell > 3 ? 1 : 0), cell - (cell > 3 ? 1 : 0));
+}
+function drawAll(){
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  for (let i = 0; i < rows.length; i++) drawCell(i);
+}
+function fmtTime(sec){
+  if (!isFinite(sec)) return '-';
+  const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60);
+  return h ? `${h} 小時 ${m} 分` : m ? `${m} 分 ${Math.floor(sec % 60)} 秒` : `${Math.floor(sec)} 秒`;
+}
+function updateStats(){
+  let ok = 0, none = 0, err = 0;
+  for (const r of res) { if (!r) continue; if (r.status === 'ok') ok++; else if (r.status === 'none') none++; else err++; }
+  const done = ok + none + err, total = rows.length;
+  $('sDone').textContent = done; $('sTotal').textContent = total;
+  $('sOk').textContent = ok; $('sNone').textContent = none; $('sErr').textContent = err;
+  $('sRate').textContent = done ? (ok / done * 100).toFixed(1) + '%' : '-';
+  $('barFill').style.width = total ? (done / total * 100) + '%' : '0';
+  const el = (Date.now() - runStart) / 1000;
+  if (running && doneThisRun > 3 && el > 0) {
+    const sp = doneThisRun / el;
+    $('sSpeed').textContent = sp.toFixed(2) + ' 本/秒';
+    $('sEta').textContent = fmtTime((total - done) / sp);
+  } else { $('sSpeed').textContent = '-'; $('sEta').textContent = '-'; }
+}
+function renderTable(){
+  const f = $('filter').value, out = [];
+  for (let k = order.length - 1; k >= 0 && out.length < 100; k--) {
+    const i = order[k], r = res[i]; if (!r) continue;
+    if (f !== 'all' && r.status !== f) continue;
+    const row = rows[i];
+    const label = { ok: '找到', none: '未找到', error: '錯誤' }[r.status];
+    out.push(`<tr>
+      <td>${r.url ? `<img src="${esc(r.url)}" referrerpolicy="no-referrer" loading="lazy" alt="">` : ''}</td>
+      <td>${esc(row.title)}<br><span class="hint">${esc(row.author)} ${esc(row.publisher)}</span></td>
+      <td>${esc(r.mt || '')}<br><span class="hint">${esc(r.ma || r.msg || '')}</span></td>
+      <td>${r.score ?? ''}</td><td>${esc(r.src || '')}</td>
+      <td><span class="tag t-${r.status}">${label}</span></td></tr>`);
+  }
+  $('tbody').innerHTML = out.join('');
+}
+$('filter').addEventListener('change', renderTable);
+
+function setButtons(){
+  const has = rows.length > 0;
+  $('btnStart').disabled = !has || running;
+  $('btnPause').disabled = !running;
+  $('btnRetry').disabled = !has || running;
+  $('btnExport').disabled = !has;
+  $('btnReset').disabled = !has || running;
+}
+function initUI(){
+  layoutMap(); drawAll(); updateStats(); renderTable(); setButtons();
+}
+
+$('btnStart').onclick = startRun;
+$('btnPause').onclick = pauseRun;
+$('btnRetry').onclick = () => {
+  let n = 0;
+  res.forEach((r, i) => { if (r && r.status !== 'ok') { res[i] = undefined; n++; } });
+  order = order.filter(i => res[i]);
+  drawAll(); log(`已將 ${n} 筆「未找到／錯誤」重設為待處理。`);
+  startRun();
+};
+$('btnReset').onclick = async () => {
+  if (!confirm('確定清除全部資料與進度？')) return;
+  await store.clear(); rows = []; raw = []; res = []; order = [];
+  $('mapRow').style.display = 'none'; $('log').textContent = '';
+  initUI();
+};
+
+/* ---------- 匯出 ---------- */
+$('btnExport').onclick = () => {
+  const hasH = header && $('hasHeader').checked;
+  const base = header ? header.slice() : [];
+  const fields = base.concat(['cover_url', 'status', 'source', 'matched_title', 'matched_author', 'score']);
+  const data = raw.map((r, i) => {
+    const x = res[i] || {};
+    const cells = base.map((_, c) => r[c] ?? '');
+    return cells.concat([x.url || '', x.status || 'pending', x.src || '', x.mt || '', x.ma || '', x.score ?? '']);
+  });
+  const csv = Papa.unparse({ fields, data });
+  const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'book_covers_' + new Date().toISOString().slice(0, 10) + '.csv';
+  a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+};
+
+window.addEventListener('beforeunload', e => { if (running) { e.preventDefault(); e.returnValue = ''; } });
+checkRestore();
+setButtons();
+})();
+</script>
+</body>
+</html>
